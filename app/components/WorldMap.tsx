@@ -6,7 +6,8 @@ import { createRoot, type Root } from "react-dom/client";
 import "mapbox-gl/dist/mapbox-gl.css";
 import type { Map as MapboxMap, Marker } from "mapbox-gl";
 import type { AvatarFullConfig } from "react-nice-avatar";
-import type { PeerDot } from "@/lib/types";
+import type { ArcEvent, PeerDot } from "@/lib/types";
+import { drawArc } from "./arcs";
 
 const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? "pk.eyJ1IjoicHVsc2UtbWFwIiwiYSI6ImNrMDBkZW1vMDAwMDAwMDAifQ.AAAAAAAAAAAAAAAAAAAAAA";
 
@@ -98,11 +99,13 @@ function removePeerMarker({ marker, root }: PeerMarker) {
 
 export default function WorldMap({
   peers,
+  arcs,
   me,
   onPeerClick,
   canConnect,
 }: {
   peers: PeerDot[];
+  arcs: ArcEvent[];
   me: { lat: number; lng: number } | null;
   onPeerClick: (id: string) => void;
   canConnect: boolean;
@@ -111,6 +114,9 @@ export default function WorldMap({
   const mapRef = useRef<MapboxMap | null>(null);
   const markersRef = useRef<Map<string, PeerMarker>>(new Map());
   const meMarkerRef = useRef<Marker | null>(null);
+  const seenArcsRef = useRef<Set<string>>(new Set());
+  // Stop functions for arcs still animating, so teardown can cancel them.
+  const activeArcsRef = useRef<Set<() => void>>(new Set());
   const [ready, setReady] = useState(false);
 
   // Marker click handlers are bound once, so read the live click handler +
@@ -127,6 +133,7 @@ export default function WorldMap({
     if (!TOKEN || !containerRef.current) return;
     let cancelled = false;
     const markers = markersRef.current;
+    const activeArcs = activeArcsRef.current;
 
     (async () => {
       const { mapboxgl } = await loadLibs();
@@ -149,6 +156,7 @@ export default function WorldMap({
 
     return () => {
       cancelled = true;
+      activeArcs.forEach((stop) => stop());
       markers.forEach(removePeerMarker);
       markers.clear();
       meMarkerRef.current?.remove();
@@ -252,6 +260,31 @@ export default function WorldMap({
       cancelled = true;
     };
   }, [peers, ready]);
+
+  // Draw each connection arc once, the first poll it shows up in.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const seen = seenArcsRef.current;
+    const active = activeArcsRef.current;
+    const reducedMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+
+    for (const arc of arcs) {
+      if (seen.has(arc.id)) continue;
+      seen.add(arc.id);
+      const stop = drawArc(map, arc, {
+        reducedMotion,
+        onDone: () => active.delete(stop),
+      });
+      active.add(stop);
+    }
+
+    // The server stops sending an arc once it's old, and never sends it again.
+    const live = new Set(arcs.map((a) => a.id));
+    for (const id of seen) if (!live.has(id)) seen.delete(id);
+  }, [arcs, ready]);
 
   function recenter() {
     if (me && mapRef.current) centerOn(mapRef.current, me.lng, me.lat);

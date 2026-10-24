@@ -9,7 +9,12 @@ import VideoPanel from "./components/VideoPanel";
 import { join, leave, poll, sendSignal } from "@/lib/api";
 import { PeerSession, type DescType, type PeerControl } from "@/lib/webrtc";
 import { POLL_INTERVAL_MS } from "@/lib/presence";
-import { type DeclineReason, type PeerDot, type SignalMsg } from "@/lib/types";
+import {
+  type ArcEvent,
+  type DeclineReason,
+  type PeerDot,
+  type SignalMsg,
+} from "@/lib/types";
 
 type Conn =
   | { kind: "idle" }
@@ -36,6 +41,7 @@ export default function Home() {
   // Secret: proves who we are to the API. Others only ever see its hash.
   const [sessionToken] = useState(() => crypto.randomUUID());
   const [peers, setPeers] = useState<PeerDot[]>([]);
+  const [arcs, setArcs] = useState<ArcEvent[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -335,6 +341,7 @@ export default function Home() {
           await join(sessionToken, myLocation.lat, myLocation.lng);
         }
         setPeers(data.peers);
+        setArcs(data.arcs);
         for (const s of data.signals) processSignalRef.current(s);
       } catch {}
       if (active) timer = setTimeout(tick, POLL_INTERVAL_MS);
@@ -377,6 +384,7 @@ export default function Home() {
     <main className="fixed inset-0 overflow-clip">
       <WorldMap
         peers={peers}
+        arcs={arcs}
         me={myLocation}
         onPeerClick={requestConnection}
         canConnect={conn.kind === "idle"}
