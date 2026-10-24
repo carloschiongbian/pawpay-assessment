@@ -231,6 +231,11 @@ export default function Home() {
           if (requestTimer.current) clearTimeout(requestTimer.current);
           startPeer(sig.fromId, true);
           setConn({ kind: "connecting", peerId: sig.fromId });
+        } else {
+          // We cancelled or timed out before this accept arrived. The server
+          // may have applied our "end" before their "accept", leaving both of
+          // us busy, so end it again to free the flags and close their side.
+          void sendSignal(sessionId, sig.fromId, "end");
         }
         break;
       }
