@@ -21,9 +21,10 @@ export async function GET(request: NextRequest) {
   const staleCutoff = new Date(now - STALE_MS);
   const signalCutoff = new Date(now - SIGNAL_TTL_MS);
 
-  // 1) Heartbeat — refresh lastSeen for the caller.
-  await prisma.presence.updateMany({
-    where: {},
+  // 1) Heartbeat — refresh lastSeen for the caller only, so everyone else's
+  // row ages out once they stop polling.
+  const heartbeat = await prisma.presence.updateMany({
+    where: { id },
     data: { lastSeen: new Date(now) },
   });
 
@@ -54,6 +55,9 @@ export async function GET(request: NextRequest) {
   }
 
   const response: PollResponse = {
+    // False if our row was reaped (e.g. a throttled background tab missed
+    // heartbeats); the client re-joins to get back on the map.
+    present: heartbeat.count > 0,
     peers: peers.map((p) => ({
       id: p.id,
       lat: p.lat,
