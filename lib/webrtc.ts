@@ -1,9 +1,14 @@
+import { createVeil, type Veil } from "@/lib/veil";
+
 export type DescType = "offer" | "answer" | "ice";
 export type PeerControl =
   | "video-request"
   | "video-accept"
   | "video-decline"
-  | "video-end";
+  | "video-end"
+  // Mutual reveal: each side says whether it's ready to unblur.
+  | "reveal-on"
+  | "reveal-off";
 
 interface PeerCallbacks {
   onSignal: (type: DescType, payload: string) => void;
@@ -26,6 +31,9 @@ export class PeerSession {
   private makingOffer = false;
   private ignoreOffer = false;
   private localStream: MediaStream | null = null;
+  private veil: Veil | null = null;
+  private videoSender: RTCRtpSender | null = null;
+  private revealed = false;
   private closed = false;
   private readonly cb: PeerCallbacks;
   private pendingCandidates: RTCIceCandidateInit[] = [];
@@ -158,20 +166,45 @@ export class PeerSession {
     }
   }
 
+  // Returns the raw camera stream for the local preview. The stranger gets the
+  // veiled copy of the video until setVideoRevealed(true).
   async startVideo(): Promise<MediaStream> {
     if (!this.localStream) {
       this.localStream = await navigator.mediaDevices.getUserMedia({
         video: true,
         audio: true,
       });
-      for (const track of this.localStream.getTracks()) {
-        this.pc.addTrack(track, this.localStream);
+      const outgoing = new MediaStream();
+      for (const track of this.localStream.getAudioTracks()) {
+        this.pc.addTrack(track, outgoing);
+      }
+      const camera = this.localStream.getVideoTracks()[0];
+      if (camera) {
+        this.veil = createVeil(camera);
+        this.videoSender = this.pc.addTrack(
+          this.revealed ? camera : this.veil.track,
+          outgoing,
+        );
       }
     }
     return this.localStream;
   }
 
+  // Swap between the real camera and the veil without renegotiating.
+  setVideoRevealed(revealed: boolean) {
+    this.revealed = revealed;
+    const camera = this.localStream?.getVideoTracks()[0];
+    if (!this.videoSender || !camera || !this.veil) return;
+    void this.videoSender
+      .replaceTrack(revealed ? camera : this.veil.track)
+      .catch(() => {});
+  }
+
   stopVideo() {
+    this.revealed = false;
+    this.veil?.stop();
+    this.veil = null;
+    this.videoSender = null;
     if (this.localStream) {
       for (const track of this.localStream.getTracks()) track.stop();
       for (const sender of this.pc.getSenders()) {
