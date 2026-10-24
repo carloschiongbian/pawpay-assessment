@@ -32,3 +32,17 @@ model Signal {
 
   @@index([toId])
 }
+
+model Arc {
+  // A connection that just started, drawn on everyone's globe for a few
+  // seconds. Holds no session ids — only the two (already privacy-offset) dot
+  // positions — and is reaped shortly after.
+  id        String   @id @default(uuid())
+  fromLat   Float
+  fromLng   Float
+  toLat     Float
+  toLng     Float
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}

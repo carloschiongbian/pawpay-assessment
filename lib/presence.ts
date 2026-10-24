@@ -6,5 +6,9 @@ export const STALE_MS = 15_000;
 // Orphan signals (mailbox messages never drained) are cleaned up after this.
 export const SIGNAL_TTL_MS = 60_000;
 
+// Arcs for connections started within this window are sent to every client;
+// a few polls' worth, so nobody misses one. Older ones are reaped.
+export const ARC_WINDOW_MS = 10_000;
+
 // Client poll interval. Kept here so client + server reason about the same cadence.
 export const POLL_INTERVAL_MS = 1_500;

@@ -22,6 +22,14 @@ export interface PeerDot {
   busy: boolean;
 }
 
+// A connection that just started somewhere, drawn as an arc on the globe.
+// Points are [lng, lat] of the two (privacy-offset) dots.
+export interface ArcEvent {
+  id: string;
+  from: [number, number];
+  to: [number, number];
+}
+
 export interface SignalMsg {
   id: string;
   fromId: string;
@@ -35,4 +43,5 @@ export interface PollResponse {
   present: boolean;
   peers: PeerDot[];
   signals: SignalMsg[];
+  arcs: ArcEvent[];
 }

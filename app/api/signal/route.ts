@@ -56,20 +56,25 @@ export async function POST(request: NextRequest) {
   }
   const payloadStr = typeof payload === "string" ? payload : null;
 
-  if (signalType === "request" && !rateLimit(`request:${fromId}`, 6, 60_000)) {
+  // Requests reach strangers and accepts draw an arc on every globe, so both
+  // share a tight per-user budget.
+  if (
+    (signalType === "request" || signalType === "accept") &&
+    !rateLimit(`connect:${fromId}`, 6, 60_000)
+  ) {
     return tooManyRequests();
   }
 
   // Only users on the map can signal.
   const sender = await prisma.presence.findUnique({
     where: { id: fromId },
-    select: { id: true },
+    select: { lat: true, lng: true },
   });
   if (!sender) return unauthorized();
 
   const target = await prisma.presence.findUnique({
     where: { id: toId },
-    select: { busy: true },
+    select: { busy: true, lat: true, lng: true },
   });
   if (!target) {
     // Target went offline — tell a requester it was declined; anything else
@@ -100,6 +105,16 @@ export async function POST(request: NextRequest) {
     await prisma.presence.updateMany({
       where: { id: { in: [fromId, toId] } },
       data: { busy: true },
+    });
+    // Light up the new connection on everyone's globe, from requester to
+    // accepter.
+    await prisma.arc.create({
+      data: {
+        fromLat: target.lat,
+        fromLng: target.lng,
+        toLat: sender.lat,
+        toLng: sender.lng,
+      },
     });
   } else if (signalType === "decline" && payloadStr === "busy") {
     await prisma.presence.updateMany({
