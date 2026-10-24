@@ -90,6 +90,12 @@ export default function Home() {
       onChannelOpen: () => {
         setConn({ kind: "connected", peerId });
       },
+      onChannelClose: () => {
+        // The peer may have vanished without delivering an "end" (e.g. tab
+        // closed), so send one ourselves to free both busy flags.
+        void sendSignal(sessionId, peerId, "end");
+        teardown("Stranger disconnected.");
+      },
     });
     peerRef.current = ps;
   }
