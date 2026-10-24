@@ -9,7 +9,7 @@ import VideoPanel from "./components/VideoPanel";
 import { join, leave, poll, sendSignal } from "@/lib/api";
 import { PeerSession, type DescType, type PeerControl } from "@/lib/webrtc";
 import { POLL_INTERVAL_MS } from "@/lib/presence";
-import { type PeerDot, type SignalMsg } from "@/lib/types";
+import { type DeclineReason, type PeerDot, type SignalMsg } from "@/lib/types";
 
 type Conn =
   | { kind: "idle" }
@@ -21,6 +21,11 @@ type Conn =
 type VideoState = "none" | "requesting" | "incoming" | "active";
 
 const REQUEST_TIMEOUT_MS = 30_000;
+
+const DECLINE_NOTICES: Record<string, string> = {
+  busy: "User is busy.",
+  offline: "User is offline.",
+} satisfies Record<DeclineReason, string>;
 
 export default function Home() {
   const [phase, setPhase] = useState<"gate" | "live">("gate");
@@ -221,7 +226,12 @@ export default function Home() {
         if (connRef.current.kind === "idle") {
           setConn({ kind: "incoming", peerId: sig.fromId });
         } else {
-          void sendSignal(sessionId, sig.fromId, "decline");
+          void sendSignal(
+            sessionId,
+            sig.fromId,
+            "decline",
+            "busy" satisfies DeclineReason,
+          );
         }
         break;
       }
@@ -243,7 +253,7 @@ export default function Home() {
         const c = connRef.current;
         if (c.kind === "requesting" && c.peerId === sig.fromId) {
           if (requestTimer.current) clearTimeout(requestTimer.current);
-          teardown("Request declined.");
+          teardown(DECLINE_NOTICES[sig.payload ?? ""] ?? "Request declined.");
         }
         break;
       }

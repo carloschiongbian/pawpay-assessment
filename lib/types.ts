@@ -10,6 +10,11 @@ export type SignalType =
   | "ice" // WebRTC ICE candidate
   | "end"; // hang up / leave the connection
 
+// Payload of an automatic "decline". A manual decline has no payload.
+export type DeclineReason =
+  | "busy" // recipient is already in (or being asked into) a connection
+  | "offline"; // recipient left before the request arrived
+
 export interface PeerDot {
   id: string;
   lat: number;
