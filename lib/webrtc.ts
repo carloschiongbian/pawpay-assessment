@@ -28,6 +28,7 @@ export class PeerSession {
   private closed = false;
   private readonly cb: PeerCallbacks;
   private pendingCandidates: RTCIceCandidateInit[] = [];
+  private signalChain: Promise<void> = Promise.resolve();
 
   constructor(initiator: boolean, cb: PeerCallbacks) {
     this.cb = cb;
@@ -81,11 +82,20 @@ export class PeerSession {
         } else if (msg.t === "ctrl" && typeof msg.ctrl === "string") {
           this.cb.onControl(msg.ctrl as PeerControl);
         }
-      } catch {}
+      } catch { }
     };
   }
 
-  async handleSignal(type: DescType, payload: string) {
+  // Signals arrive in batches from the poll loop; applying a dedicated processing function to serialize them so an ICE
+  // candidate never races ahead of the setRemoteDescription it depends on.
+  handleSignal(type: DescType, payload: string): Promise<void> {
+    this.signalChain = this.signalChain
+      .then(() => this.processSignal(type, payload))
+      .catch(() => { });
+    return this.signalChain;
+  }
+
+  private async processSignal(type: DescType, payload: string) {
     if (this.closed) return;
     const data = JSON.parse(payload);
 
@@ -96,7 +106,7 @@ export class PeerSession {
       }
       try {
         await this.pc.addIceCandidate(data);
-      } catch {}
+      } catch { }
       return;
     }
 
@@ -107,8 +117,8 @@ export class PeerSession {
     this.ignoreOffer = !this.polite && offerCollision;
     if (this.ignoreOffer) return;
 
-    await this.flushPendingCandidates();
     await this.pc.setRemoteDescription(desc);
+    await this.flushPendingCandidates();
     if (desc.type === "offer") {
       await this.pc.setLocalDescription();
       if (this.pc.localDescription) {
@@ -124,7 +134,7 @@ export class PeerSession {
     for (const candidate of queued) {
       try {
         await this.pc.addIceCandidate(candidate);
-      } catch {}
+      } catch { }
     }
   }
 
@@ -162,7 +172,7 @@ export class PeerSession {
         if (sender.track) {
           try {
             this.pc.removeTrack(sender);
-          } catch {}
+          } catch { }
         }
       }
       this.localStream = null;
@@ -176,10 +186,10 @@ export class PeerSession {
     if (this.dc) {
       try {
         this.dc.close();
-      } catch {}
+      } catch { }
     }
     try {
       this.pc.close();
-    } catch {}
+    } catch { }
   }
 }
