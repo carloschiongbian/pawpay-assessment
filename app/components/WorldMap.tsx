@@ -1,18 +1,69 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { createElement, useEffect, useRef, useState } from "react";
+import { preconnect } from "react-dom";
+import { createRoot, type Root } from "react-dom/client";
 import "mapbox-gl/dist/mapbox-gl.css";
 import type { Map as MapboxMap, Marker } from "mapbox-gl";
+import type { AvatarFullConfig } from "react-nice-avatar";
 import type { PeerDot } from "@/lib/types";
 
 const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? "pk.eyJ1IjoicHVsc2UtbWFwIiwiYSI6ImNrMDBkZW1vMDAwMDAwMDAifQ.AAAAAAAAAAAAAAAAAAAAAA";
 
-function dotColor(id: string): string {
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) {
-    hash = (hash * 31 + id.charCodeAt(i)) | 0;
+// Browser-only libraries, imported once and shared by every effect.
+let libsPromise: Promise<{
+  mapboxgl: typeof import("mapbox-gl").default;
+  avatar: typeof import("react-nice-avatar");
+}> | null = null;
+
+function loadLibs() {
+  libsPromise ??= Promise.all([
+    import("mapbox-gl"),
+    import("react-nice-avatar"),
+  ]).then(([mapbox, avatar]) => ({ mapboxgl: mapbox.default, avatar }));
+  return libsPromise;
+}
+
+// Start downloading while the user is still on the entry gate, so the map and
+// avatars are ready by the time they enter.
+if (typeof window !== "undefined") {
+  preconnect("https://api.mapbox.com");
+  void loadLibs();
+}
+
+// genConfig(id) is deterministic, so each face is computed once per user and
+// reused if they drop off the map and come back.
+const avatarConfigs = new Map<string, Required<AvatarFullConfig>>();
+
+function avatarConfig(
+  genConfig: typeof import("react-nice-avatar").genConfig,
+  id: string,
+) {
+  let config = avatarConfigs.get(id);
+  if (!config) {
+    config = genConfig(id);
+    avatarConfigs.set(id, config);
   }
-  return `hsl(${Math.abs(hash) % 360}, 70%, 60%)`;
+  return config;
+}
+
+// Fly to a point, without zooming back out if the user is already closer.
+function centerOn(map: MapboxMap, lng: number, lat: number) {
+  map.flyTo({ center: [lng, lat], zoom: Math.max(map.getZoom(), 4) });
+}
+
+interface PeerMarker {
+  marker: Marker;
+  button: HTMLButtonElement;
+  root: Root;
+  busy: boolean;
+}
+
+function removePeerMarker({ marker, root }: PeerMarker) {
+  marker.remove();
+  // Deferred so this is safe to call from an effect cleanup, while React is
+  // still committing.
+  queueMicrotask(() => root.unmount());
 }
 
 export default function WorldMap({
@@ -28,7 +79,7 @@ export default function WorldMap({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapboxMap | null>(null);
-  const markersRef = useRef<Map<string, Marker>>(new Map());
+  const markersRef = useRef<Map<string, PeerMarker>>(new Map());
   const meMarkerRef = useRef<Marker | null>(null);
   const [ready, setReady] = useState(false);
 
@@ -48,7 +99,7 @@ export default function WorldMap({
     const markers = markersRef.current;
 
     (async () => {
-      const mapboxgl = (await import("mapbox-gl")).default;
+      const { mapboxgl } = await loadLibs();
       if (cancelled || !containerRef.current) return;
       mapboxgl.accessToken = TOKEN;
       const map = new mapboxgl.Map({
@@ -67,7 +118,7 @@ export default function WorldMap({
 
     return () => {
       cancelled = true;
-      markers.forEach((m) => m.remove());
+      markers.forEach(removePeerMarker);
       markers.clear();
       meMarkerRef.current?.remove();
       meMarkerRef.current = null;
@@ -86,7 +137,7 @@ export default function WorldMap({
     let cancelled = false;
 
     (async () => {
-      const mapboxgl = (await import("mapbox-gl")).default;
+      const { mapboxgl } = await loadLibs();
       if (cancelled) return;
       if (!meMarkerRef.current) {
         const el = document.createElement("div");
@@ -114,35 +165,53 @@ export default function WorldMap({
     let cancelled = false;
 
     (async () => {
-      const mapboxgl = (await import("mapbox-gl")).default;
+      const { mapboxgl, avatar } = await loadLibs();
       if (cancelled) return;
       const markers = markersRef.current;
       const seen = new Set<string>();
 
       for (const peer of peers) {
         seen.add(peer.id);
-        let marker = markers.get(peer.id);
-        if (!marker) {
-          const el = document.createElement("button");
-          el.className = "pulse-dot";
-          el.style.background = dotColor(peer.id);
-          el.title = "Tap to connect";
-          el.addEventListener("click", (e) => {
+        let entry = markers.get(peer.id);
+        if (!entry) {
+          // Mapbox positions the wrapper with an inline transform, so hover
+          // effects go on the button inside it, never on the marker element.
+          const el = document.createElement("div");
+          const button = document.createElement("button");
+          button.className = "pulse-avatar";
+          el.append(button);
+          button.addEventListener("click", (e) => {
             e.stopPropagation();
+            centerOn(map, peer.lng, peer.lat);
             if (canConnectRef.current) onPeerClickRef.current(peer.id);
           });
-          marker = new mapboxgl.Marker({ element: el })
+          // Rendered once; the avatar never changes for a given user.
+          const root = createRoot(button);
+          root.render(
+            createElement(avatar.default, {
+              ...avatarConfig(avatar.genConfig, peer.id),
+              shape: "circle",
+              style: { width: "100%", height: "100%" },
+            }),
+          );
+          const marker = new mapboxgl.Marker({ element: el })
             .setLngLat([peer.lng, peer.lat])
             .addTo(map);
-          markers.set(peer.id, marker);
+          entry = { marker, button, root, busy: !peer.busy };
+          markers.set(peer.id, entry);
         }
-        marker.getElement().style.opacity = peer.busy ? "0.35" : "1";
+        // Only touch the DOM when busy actually flips, not on every poll.
+        if (entry.busy !== peer.busy) {
+          entry.busy = peer.busy;
+          entry.button.classList.toggle("is-busy", peer.busy);
+          entry.button.title = peer.busy ? "Busy" : "Tap to connect";
+        }
       }
 
       // Drop markers for peers that went offline / got filtered out.
-      for (const [id, marker] of markers) {
+      for (const [id, entry] of markers) {
         if (!seen.has(id)) {
-          marker.remove();
+          removePeerMarker(entry);
           markers.delete(id);
         }
       }
@@ -152,6 +221,10 @@ export default function WorldMap({
       cancelled = true;
     };
   }, [peers, ready]);
+
+  function recenter() {
+    if (me && mapRef.current) centerOn(mapRef.current, me.lng, me.lat);
+  }
 
   return (
     <div className="absolute inset-0">
@@ -167,9 +240,21 @@ export default function WorldMap({
         </div>
       )}
 
-      {/* Online count */}
-      <div className="absolute bottom-4 left-4 rounded-full bg-zinc-900/80 px-3 py-1.5 text-xs text-zinc-300 backdrop-blur">
-        {peers.length} online
+      {/* Light pills stand out against the dark map and panels. */}
+      <div className="absolute right-4 top-4 flex flex-col items-stretch gap-2 text-xs font-medium">
+        <div className="flex items-center justify-center gap-2 rounded-full bg-white/90 px-3 py-1.5 text-zinc-900 shadow-lg ring-1 ring-black/5 backdrop-blur">
+          <span className="size-1.5 rounded-full bg-emerald-500" />
+          {peers.length} online
+        </div>
+
+        <button
+          onClick={recenter}
+          disabled={!me || !ready}
+          title="Center on my location"
+          className="flex items-center justify-center gap-1.5 rounded-full bg-white/90 px-3 py-1.5 text-zinc-900 shadow-lg ring-1 ring-black/5 backdrop-blur transition hover:bg-white active:scale-95 disabled:pointer-events-none disabled:opacity-40"
+        >
+          📍 My location
+        </button>
       </div>
     </div>
   );

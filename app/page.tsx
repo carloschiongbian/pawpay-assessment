@@ -346,7 +346,7 @@ export default function Home() {
   const inChat = conn.kind === "connecting" || conn.kind === "connected";
 
   return (
-    <main className="fixed inset-0 overflow-hidden">
+    <main className="fixed inset-0 overflow-clip">
       <WorldMap
         peers={peers}
         me={myLocation}

@@ -26,7 +26,7 @@ export default function ChatPanel({
   onEnd: () => void;
 }) {
   const [draft, setDraft] = useState("");
-  const endRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
   // The drawer stays mounted so it can slide out; drop any unsent draft when
   // it closes so it doesn't carry over to the next stranger.
@@ -37,7 +37,10 @@ export default function ChatPanel({
   }
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
+    // Scroll only the message list. scrollIntoView would also scroll the
+    // page's ancestors, dragging the off-screen drawer into view.
+    const list = listRef.current;
+    list?.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
   }, [messages]);
 
   function submit(e: React.FormEvent) {
@@ -80,7 +83,7 @@ export default function ChatPanel({
         </div>
       </header>
 
-      <div className="flex-1 space-y-2 overflow-y-auto p-4">
+      <div ref={listRef} className="flex-1 space-y-2 overflow-y-auto p-4">
         {messages.length === 0 && (
           <p className="mt-8 text-center text-sm text-zinc-500">
             Say hello. Messages are peer-to-peer and never stored.
@@ -102,7 +105,6 @@ export default function ChatPanel({
             </span>
           </div>
         ))}
-        <div ref={endRef} />
       </div>
 
       <form onSubmit={submit} className="flex gap-2 border-t border-zinc-800 p-3">
