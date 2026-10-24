@@ -9,6 +9,7 @@ export interface ChatMessage {
 }
 
 export default function ChatPanel({
+  open,
   messages,
   connected,
   videoBusy,
@@ -16,6 +17,7 @@ export default function ChatPanel({
   onStartVideo,
   onEnd,
 }: {
+  open: boolean;
   messages: ChatMessage[];
   connected: boolean;
   videoBusy: boolean;
@@ -25,6 +27,14 @@ export default function ChatPanel({
 }) {
   const [draft, setDraft] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
+
+  // The drawer stays mounted so it can slide out; drop any unsent draft when
+  // it closes so it doesn't carry over to the next stranger.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (!open) setDraft("");
+  }
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -39,12 +49,18 @@ export default function ChatPanel({
   }
 
   return (
-    <div className="absolute inset-y-0 right-0 z-20 flex w-full max-w-md flex-col border-l border-zinc-800 bg-zinc-950 text-zinc-100 shadow-2xl">
+    <div
+      inert={!open}
+      aria-hidden={!open}
+      className={`absolute inset-y-0 right-0 z-20 flex w-full max-w-md flex-col border-l border-zinc-800 bg-zinc-950 text-zinc-100 shadow-2xl transition-transform duration-300 ease-out motion-reduce:transition-none ${
+        open ? "translate-x-0" : "translate-x-full"
+      }`}
+    >
       <header className="flex items-center justify-between border-b border-zinc-800 px-4 py-3">
         <div>
           <p className="font-semibold">Stranger</p>
           <p className="text-xs text-zinc-500">
-            {connected ? "Connected" : "Connecting…"}
+            {!open ? "Disconnected" : connected ? "Connected" : "Connecting…"}
           </p>
         </div>
         <div className="flex gap-2">

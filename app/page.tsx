@@ -73,12 +73,14 @@ export default function Home() {
     setLocalStream(null);
     setRemoteStream(null);
     setVideo("none");
-    setMessages([]);
     setConn({ kind: "idle" });
     if (message) showNotice(message);
   }
 
   function startPeer(peerId: string, initiator: boolean) {
+    // Cleared here rather than in teardown so the previous chat stays visible
+    // while the drawer slides out.
+    setMessages([]);
     const ps = new PeerSession(initiator, {
       onSignal: (type: DescType, payload: string) => {
         void sendSignal(sessionId, peerId, type, payload);
@@ -380,19 +382,18 @@ export default function Home() {
         />
       )}
 
-      {inChat && (
-        <ChatPanel
-          messages={messages}
-          connected={conn.kind === "connected"}
-          videoBusy={video !== "none"}
-          onSend={(text) => {
-            peerRef.current?.sendChat(text);
-            addMessage(true, text);
-          }}
-          onStartVideo={startVideoRequest}
-          onEnd={endConnection}
-        />
-      )}
+      <ChatPanel
+        open={inChat}
+        messages={messages}
+        connected={conn.kind === "connected"}
+        videoBusy={video !== "none"}
+        onSend={(text) => {
+          peerRef.current?.sendChat(text);
+          addMessage(true, text);
+        }}
+        onStartVideo={startVideoRequest}
+        onEnd={endConnection}
+      />
 
       {video === "requesting" && (
         <div className="absolute bottom-24 left-1/2 z-30 -translate-x-1/2 rounded-full bg-zinc-800/90 px-4 py-2 text-sm text-zinc-100 shadow-lg backdrop-blur">
