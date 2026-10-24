@@ -47,6 +47,36 @@ function avatarConfig(
   return config;
 }
 
+// Recolor Mapbox's dark style: blue water, green land, and a blue atmosphere
+// around the globe. Kept dark so the white controls and avatars still pop.
+const WATER = "hsl(208, 65%, 30%)";
+const LAND = "hsl(145, 32%, 26%)";
+
+function applyMapColors(map: MapboxMap) {
+  map.setPaintProperty("land", "background-color", LAND);
+  map.setPaintProperty("landuse", "fill-color", "hsl(135, 35%, 30%)");
+  map.setPaintProperty("water", "fill-color", WATER);
+  map.setPaintProperty("waterway", "line-color", WATER);
+  // Halos drawn under borders; match the land so they don't read as gray lines.
+  map.setPaintProperty("admin-0-boundary-bg", "line-color", LAND);
+  map.setPaintProperty("admin-1-boundary-bg", "line-color", LAND);
+  // Every text label in white; the style's dark halos keep them legible.
+  for (const layer of map.getStyle()?.layers ?? []) {
+    if (layer.type === "symbol" && layer.layout?.["text-field"]) {
+      map.setPaintProperty(layer.id, "text-color", "#ffffff");
+    }
+  }
+  // The style draws province/state names at half opacity.
+  map.setPaintProperty("state-label", "text-opacity", 1);
+  map.setFog({
+    color: "hsl(205, 70%, 35%)",
+    "high-color": "hsl(220, 80%, 18%)",
+    "space-color": "hsl(230, 50%, 6%)",
+    "horizon-blend": 0.05,
+    "star-intensity": 0.35,
+  });
+}
+
 // Fly to a point, without zooming back out if the user is already closer.
 function centerOn(map: MapboxMap, lng: number, lat: number) {
   map.flyTo({ center: [lng, lat], zoom: Math.max(map.getZoom(), 4) });
@@ -110,6 +140,7 @@ export default function WorldMap({
         zoom: me ? 4 : 1.4,
         attributionControl: true,
       });
+      map.on("style.load", () => applyMapColors(map));
       map.on("load", () => {
         if (!cancelled) setReady(true);
       });
