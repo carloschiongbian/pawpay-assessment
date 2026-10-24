@@ -1,21 +1,22 @@
 import type { NextRequest } from "next/server";
+import { callerId, unauthorized } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { rateLimit, tooManyRequests } from "@/lib/rateLimit";
 import { STALE_MS, SIGNAL_TTL_MS } from "@/lib/presence";
 import type { PollResponse } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// GET /api/poll?id= — the single endpoint that drives the live map.
-// It (1) heartbeats the caller, (2) reaps stale presence + orphan signals,
-// (3) returns the filtered online peers, and (4) drains this user's mailbox.
+// GET /api/poll — Authorization: Bearer <token>. The single endpoint that
+// drives the live map. It (1) heartbeats the caller, (2) reaps stale presence
+// + orphan signals, (3) returns the filtered online peers, and (4) drains this
+// user's mailbox.
 export async function GET(request: NextRequest) {
-  const params = request.nextUrl.searchParams;
-  const id = params.get("id");
-
-  if (!id) {
-    return Response.json({ error: "missing id" }, { status: 400 });
-  }
+  const id = callerId(request);
+  if (!id) return unauthorized();
+  // The client polls every 1.5s; leave headroom for retries and slow ticks.
+  if (!rateLimit(`poll:${id}`, 20, 10_000)) return tooManyRequests();
 
   const now = Date.now();
   const staleCutoff = new Date(now - STALE_MS);
@@ -32,6 +33,13 @@ export async function GET(request: NextRequest) {
   // no atomicity needed, and avoids transactions over a PgBouncer pooler).
   await prisma.presence.deleteMany({ where: { lastSeen: { lt: staleCutoff } } });
   await prisma.signal.deleteMany({ where: { createdAt: { lt: signalCutoff } } });
+
+  // Only users on the map may see who else is: anyone else must join first,
+  // which is rate limited.
+  if (heartbeat.count === 0) {
+    const response: PollResponse = { present: false, peers: [], signals: [] };
+    return Response.json(response);
+  }
 
   // 3) Online peers, excluding self.
   const peers = await prisma.presence.findMany({

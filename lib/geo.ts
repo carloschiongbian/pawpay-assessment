@@ -1,26 +1,67 @@
-// Privacy offset: move a real coordinate 1–3 km in a random direction so the
-// dot is placed *near* the user, never at their exact location. A fresh random
-// offset is generated each session (this runs once per join), so the same user
-// lands somewhere different every time.
+import { createHmac, randomBytes } from "node:crypto";
+
+// Privacy offset: place the dot 1–3 km from the user's real location, never
+// at it.
+//
+// The offset must not be freshly random per session: a random direction
+// averages out, so anyone who watches the same user's dot across a few
+// sessions could average them back to the real location. Instead the real
+// location is snapped to a ~1.1 km grid cell, and the offset is derived from
+// the cell with a keyed hash. Everyone in the same cell always lands on the
+// same spot, so repeat visits reveal nothing new, and without the secret the
+// offset can't be computed and undone.
+//
+// Offsetting from the cell center (≤ ~0.79 km from the user) by 1.8–2.2 km
+// keeps the dot 1–3 km from the user's real position.
 
 const KM_PER_DEG_LAT = 111.32;
+const CELL_DEG = 0.01; // ~1.1 km of latitude
+const MIN_OFFSET_KM = 1.8;
+const OFFSET_RANGE_KM = 0.4;
+
+let warnedNoSecret = false;
+const fallbackSecret = randomBytes(32);
+
+function privacySecret(): Buffer | string {
+  const secret = process.env.LOCATION_PRIVACY_SECRET;
+  if (secret) return secret;
+  if (!warnedNoSecret) {
+    warnedNoSecret = true;
+    // Without a fixed secret each server instance picks its own, so offsets
+    // change across restarts and instances — weaker against averaging.
+    console.warn("LOCATION_PRIVACY_SECRET is not set; using a random one.");
+  }
+  return fallbackSecret;
+}
 
 export function applyPrivacyOffset(
   lat: number,
   lng: number,
 ): { lat: number; lng: number } {
-  const distanceKm = 1 + Math.random() * 2; // 1–3 km
-  const bearing = Math.random() * 2 * Math.PI; // random direction
+  // Square-ish cells: longitude steps widen with latitude.
+  const row = Math.floor(lat / CELL_DEG);
+  const centerLat = (row + 0.5) * CELL_DEG;
+  const lngStep =
+    CELL_DEG / Math.max(Math.cos((centerLat * Math.PI) / 180), 0.05);
+  const col = Math.floor((lng + 180) / lngStep);
+  const centerLng = -180 + (col + 0.5) * lngStep;
+
+  const hash = createHmac("sha256", privacySecret())
+    .update(`${row}:${col}`)
+    .digest();
+  const distanceKm =
+    MIN_OFFSET_KM + (hash.readUInt32BE(0) / 2 ** 32) * OFFSET_RANGE_KM;
+  const bearing = (hash.readUInt32BE(4) / 2 ** 32) * 2 * Math.PI;
 
   const dLat = (distanceKm * Math.cos(bearing)) / KM_PER_DEG_LAT;
-  const latRad = (lat * Math.PI) / 180;
+  const latRad = (centerLat * Math.PI) / 180;
   const dLng =
     (distanceKm * Math.sin(bearing)) /
     (KM_PER_DEG_LAT * Math.cos(latRad) || KM_PER_DEG_LAT);
 
   return {
-    lat: clamp(lat + dLat, -90, 90),
-    lng: wrapLng(lng + dLng),
+    lat: clamp(centerLat + dLat, -90, 90),
+    lng: wrapLng(centerLng + dLng),
   };
 }
 
