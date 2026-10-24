@@ -29,7 +29,8 @@ const DECLINE_NOTICES: Record<string, string> = {
 
 export default function Home() {
   const [phase, setPhase] = useState<"gate" | "live">("gate");
-  const [sessionId] = useState(() => crypto.randomUUID());
+  // Secret: proves who we are to the API. Others only ever see its hash.
+  const [sessionToken] = useState(() => crypto.randomUUID());
   const [peers, setPeers] = useState<PeerDot[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
@@ -83,14 +84,14 @@ export default function Home() {
     setMessages([]);
     const ps = new PeerSession(initiator, {
       onSignal: (type: DescType, payload: string) => {
-        void sendSignal(sessionId, peerId, type, payload);
+        void sendSignal(sessionToken, peerId, type, payload);
       },
       onChat: (text) => addMessage(false, text),
       onControl: (ctrl) => handleControl(ctrl),
       onRemoteStream: (stream) => setRemoteStream(stream),
       onConnectionState: (state) => {
         if (state === "failed") {
-          void sendSignal(sessionId, peerId, "end");
+          void sendSignal(sessionToken, peerId, "end");
           teardown("Connection failed (network).");
         }
       },
@@ -100,7 +101,7 @@ export default function Home() {
       onChannelClose: () => {
         // The peer may have vanished without delivering an "end" (e.g. tab
         // closed), so send one ourselves to free both busy flags.
-        void sendSignal(sessionId, peerId, "end");
+        void sendSignal(sessionToken, peerId, "end");
         teardown("Stranger disconnected.");
       },
     });
@@ -145,13 +146,13 @@ export default function Home() {
   function requestConnection(peerId: string) {
     if (connRef.current.kind !== "idle") return;
     setConn({ kind: "requesting", peerId });
-    void sendSignal(sessionId, peerId, "request");
+    void sendSignal(sessionToken, peerId, "request");
     requestTimer.current = setTimeout(() => {
       if (
         connRef.current.kind === "requesting" &&
         connRef.current.peerId === peerId
       ) {
-        void sendSignal(sessionId, peerId, "end");
+        void sendSignal(sessionToken, peerId, "end");
         teardown("No answer.");
       }
     }, REQUEST_TIMEOUT_MS);
@@ -159,7 +160,7 @@ export default function Home() {
 
   function cancelRequest() {
     if (connRef.current.kind === "requesting") {
-      void sendSignal(sessionId, connRef.current.peerId, "end");
+      void sendSignal(sessionToken, connRef.current.peerId, "end");
     }
     teardown();
   }
@@ -168,20 +169,20 @@ export default function Home() {
     if (connRef.current.kind !== "incoming") return;
     const peerId = connRef.current.peerId;
     startPeer(peerId, false);
-    void sendSignal(sessionId, peerId, "accept");
+    void sendSignal(sessionToken, peerId, "accept");
     setConn({ kind: "connecting", peerId });
   }
 
   function declineIncoming() {
     if (connRef.current.kind !== "incoming") return;
-    void sendSignal(sessionId, connRef.current.peerId, "decline");
+    void sendSignal(sessionToken, connRef.current.peerId, "decline");
     setConn({ kind: "idle" });
   }
 
   function endConnection() {
     const c = connRef.current;
     if (c.kind === "connecting" || c.kind === "connected") {
-      void sendSignal(sessionId, c.peerId, "end");
+      void sendSignal(sessionToken, c.peerId, "end");
     }
     teardown();
   }
@@ -229,7 +230,7 @@ export default function Home() {
           setConn({ kind: "incoming", peerId: sig.fromId });
         } else {
           void sendSignal(
-            sessionId,
+            sessionToken,
             sig.fromId,
             "decline",
             "busy" satisfies DeclineReason,
@@ -247,7 +248,7 @@ export default function Home() {
           // We cancelled or timed out before this accept arrived. The server
           // may have applied our "end" before their "accept", leaving both of
           // us busy, so end it again to free the flags and close their side.
-          void sendSignal(sessionId, sig.fromId, "end");
+          void sendSignal(sessionToken, sig.fromId, "end");
         }
         break;
       }
@@ -295,16 +296,16 @@ export default function Home() {
   });
 
   useEffect(() => {
-    if (phase !== "live" || !sessionId) return;
+    if (phase !== "live" || !sessionToken) return;
     let active = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
 
     const tick = async () => {
       try {
-        const data = await poll(sessionId);
+        const data = await poll(sessionToken);
         if (!active) return;
         if (!data.present && myLocation) {
-          await join(sessionId, myLocation.lat, myLocation.lng);
+          await join(sessionToken, myLocation.lat, myLocation.lng);
         }
         setPeers(data.peers);
         for (const s of data.signals) processSignalRef.current(s);
@@ -317,13 +318,13 @@ export default function Home() {
       active = false;
       if (timer) clearTimeout(timer);
     };
-  }, [phase, sessionId, myLocation]);
+  }, [phase, sessionToken, myLocation]);
 
   useEffect(() => {
-    if (!sessionId || phase !== "live") return;
+    if (!sessionToken || phase !== "live") return;
     const onLeave = () => {
       const c = connRef.current;
-      leave(sessionId, c.kind === "idle" ? undefined : c.peerId);
+      leave(sessionToken, c.kind === "idle" ? undefined : c.peerId);
     };
     window.addEventListener("pagehide", onLeave);
     window.addEventListener("beforeunload", onLeave);
@@ -331,11 +332,11 @@ export default function Home() {
       window.removeEventListener("pagehide", onLeave);
       window.removeEventListener("beforeunload", onLeave);
     };
-  }, [sessionId, phase]);
+  }, [sessionToken, phase]);
 
   async function handleReady(lat: number, lng: number) {
     setMyLocation({ lat, lng });
-    await join(sessionId, lat, lng);
+    await join(sessionToken, lat, lng);
     setPhase("live");
   }
 
