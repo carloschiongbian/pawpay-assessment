@@ -301,6 +301,9 @@ export default function Home() {
       try {
         const data = await poll(sessionId);
         if (!active) return;
+        if (!data.present && myLocation) {
+          await join(sessionId, myLocation.lat, myLocation.lng);
+        }
         setPeers(data.peers);
         for (const s of data.signals) processSignalRef.current(s);
       } catch {}
@@ -312,7 +315,7 @@ export default function Home() {
       active = false;
       if (timer) clearTimeout(timer);
     };
-  }, [phase, sessionId]);
+  }, [phase, sessionId, myLocation]);
 
   useEffect(() => {
     if (!sessionId || phase !== "live") return;
