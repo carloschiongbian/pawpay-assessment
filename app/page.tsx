@@ -20,6 +20,10 @@ type Conn =
 
 type VideoState = "none" | "requesting" | "incoming" | "active";
 
+// Mutual reveal: video stays blurred until both people opt in.
+type Reveal = { mine: boolean; theirs: boolean };
+const NOT_REVEALED: Reveal = { mine: false, theirs: false };
+
 const REQUEST_TIMEOUT_MS = 30_000;
 
 const DECLINE_NOTICES: Record<string, string> = {
@@ -52,9 +56,20 @@ export default function Home() {
   const setVideo = (v: VideoState) => {
     videoRef.current = v;
     _setVideo(v);
+    // Every new video call starts blurred again.
+    if (v === "none") setReveal(NOT_REVEALED);
   };
 
   const peerRef = useRef<PeerSession | null>(null);
+
+  const [reveal, _setReveal] = useState<Reveal>(NOT_REVEALED);
+  const revealRef = useRef<Reveal>(reveal);
+  const setReveal = (r: Reveal) => {
+    revealRef.current = r;
+    _setReveal(r);
+    // The real camera only goes out once both sides have opted in.
+    peerRef.current?.setVideoRevealed(r.mine && r.theirs);
+  };
   const msgId = useRef(0);
   const requestTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -132,6 +147,12 @@ export default function Home() {
         if (videoRef.current === "requesting") {
           setVideo("none");
           showNotice("Video declined.");
+        }
+        break;
+      case "reveal-on":
+      case "reveal-off":
+        if (videoRef.current !== "none") {
+          setReveal({ ...revealRef.current, theirs: ctrl === "reveal-on" });
         }
         break;
       case "video-end":
@@ -212,6 +233,12 @@ export default function Home() {
   function declineVideo() {
     peerRef.current?.sendControl("video-decline");
     setVideo("none");
+  }
+
+  function toggleReveal() {
+    const mine = !revealRef.current.mine;
+    setReveal({ ...revealRef.current, mine });
+    peerRef.current?.sendControl(mine ? "reveal-on" : "reveal-off");
   }
 
   function endVideo() {
@@ -417,6 +444,8 @@ export default function Home() {
         <VideoPanel
           localStream={localStream}
           remoteStream={remoteStream}
+          reveal={reveal}
+          onToggleReveal={toggleReveal}
           onEnd={endVideo}
         />
       )}
