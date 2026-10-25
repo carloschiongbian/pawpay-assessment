@@ -487,7 +487,7 @@ export default function Home() {
       {video === "incoming" && (
         <ConnectionPrompt
           title="Start video call?"
-          subtitle="The stranger wants to turn on video."
+          subtitle="Video is blurred by default and can be switched on and off at any time."
           acceptLabel="Accept"
           declineLabel="Decline"
           onAccept={acceptVideo}
