@@ -45,8 +45,6 @@ Found by running two browsers side by side and testing each flow, then reading
 
 ## Phase 3 — Security
 
-Ranked by impact. All fixed in `4891aeb` unless noted.
-
 1. **Critical: identity spoofing.** The session id was both public (shown on
    the map) and the only credential. Anyone could poll as another user to read
    their signals (SDP and ICE, which exposes their IP), accept or end their
@@ -76,16 +74,6 @@ Ranked by impact. All fixed in `4891aeb` unless noted.
    - Signals require a present sender and an existing recipient.
    - Strict validation of the body, type and per-type payload, with SDP and
      ICE payloads capped at 16 KB.
-
-**Open, not fixed (needs infrastructure):**
-
-- **WebRTC exposes IPs to the peer.** Needs a TURN server with relay-only ICE.
-- **The rate limiter is in-memory and per instance.** Needs Redis or Upstash
-  on Vercel.
-- **The server doesn't track connection state.** `accept` and `end` aren't
-  checked against real pending requests.
-- **The Mapbox token isn't URL-restricted.**
-- **No security headers or CSP.** A nonce-based CSP was drafted but not kept.
 
 ## Phase 4 — Make it better
 
@@ -140,11 +128,3 @@ call.**
 - **Migrations:** `20261025120000_add_arcs`, then `20261025180000_persist_arcs`. The DB was
   originally created with `db push`, so apply them with `prisma db execute`, or
   baseline with `migrate resolve` first.
-
-### Next, with more time
-
-- An on-device nudity classifier that re-veils automatically, plus an optional
-  audio-first stage.
-- 3D arcs lifted off the surface, and a "connections in the last hour"
-  heartbeat.
-- A server-side connections table, TURN relay, and a Redis-backed rate limiter.
