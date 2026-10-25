@@ -49,5 +49,6 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  return Response.json({ ok: true });
+  // The caller's own dot, so they see themselves where everyone else does.
+  return Response.json({ ok: true, lat: offset.lat, lng: offset.lng });
 }
