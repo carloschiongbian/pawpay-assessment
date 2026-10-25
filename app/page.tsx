@@ -60,9 +60,13 @@ export default function Home() {
   const [notice, setNotice] = useState<string | null>(null);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  // Our real location never leaves this tab except to /api/join (to re-join
+  // after a timeout). The map shows `myDot`, the offset position the server
+  // gives back, which is where everyone else sees us.
   const [myLocation, setMyLocation] = useState<{ lat: number; lng: number } | null>(
     null,
   );
+  const [myDot, setMyDot] = useState<{ lat: number; lng: number } | null>(null);
 
   const [conn, _setConn] = useState<Conn>({ kind: "idle" });
   const connRef = useRef<Conn>(conn);
@@ -414,7 +418,8 @@ export default function Home() {
         const data = await poll(sessionToken);
         if (!active) return;
         if (!data.present && myLocation) {
-          await join(sessionToken, myLocation.lat, myLocation.lng);
+          const dot = await join(sessionToken, myLocation.lat, myLocation.lng);
+          if (dot) setMyDot(dot);
         }
         setPeers(data.peers);
         setArcs(data.arcs);
@@ -459,7 +464,7 @@ export default function Home() {
 
   async function handleReady(lat: number, lng: number) {
     setMyLocation({ lat, lng });
-    await join(sessionToken, lat, lng);
+    setMyDot(await join(sessionToken, lat, lng));
     setPhase("live");
   }
 
@@ -482,7 +487,7 @@ export default function Home() {
       <WorldMap
         peers={peers}
         arcs={arcs}
-        me={myLocation}
+        me={myDot}
         meId={myId}
         onPeerClick={requestConnection}
         canConnect={conn.kind === "idle"}
