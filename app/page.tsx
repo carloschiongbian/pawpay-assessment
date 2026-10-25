@@ -30,6 +30,10 @@ type VideoState = "none" | "requesting" | "incoming" | "active";
 type Reveal = { mine: boolean; theirs: boolean };
 const NOT_REVEALED: Reveal = { mine: false, theirs: false };
 
+// Whose mic and camera are on during a video call.
+type Media = { mic: boolean; cam: boolean };
+const MEDIA_ON: Media = { mic: true, cam: true };
+
 const REQUEST_TIMEOUT_MS = 30_000;
 // Accepted but the peer-to-peer link never came up (e.g. their side was torn
 // down by a stale "end"); give up rather than hold the overlay forever.
@@ -72,13 +76,19 @@ export default function Home() {
   const setVideo = (v: VideoState) => {
     videoRef.current = v;
     _setVideo(v);
-    // Every new video call starts blurred again.
-    if (v === "none") setReveal(NOT_REVEALED);
+    // Every new video call starts blurred, with mic and camera on.
+    if (v === "none") {
+      setReveal(NOT_REVEALED);
+      setMyMedia(MEDIA_ON);
+      setTheirMedia(MEDIA_ON);
+    }
   };
 
   const peerRef = useRef<PeerSession | null>(null);
   const [arcLanded, setArcLanded] = useState(false);
 
+  const [myMedia, setMyMedia] = useState<Media>(MEDIA_ON);
+  const [theirMedia, setTheirMedia] = useState<Media>(MEDIA_ON);
   const [reveal, _setReveal] = useState<Reveal>(NOT_REVEALED);
   const revealRef = useRef<Reveal>(reveal);
   const setReveal = (r: Reveal) => {
@@ -180,6 +190,18 @@ export default function Home() {
           setReveal({ ...revealRef.current, theirs: ctrl === "reveal-on" });
         }
         break;
+      case "mic-on":
+      case "mic-off":
+        if (videoRef.current !== "none") {
+          setTheirMedia((m) => ({ ...m, mic: ctrl === "mic-on" }));
+        }
+        break;
+      case "cam-on":
+      case "cam-off":
+        if (videoRef.current !== "none") {
+          setTheirMedia((m) => ({ ...m, cam: ctrl === "cam-on" }));
+        }
+        break;
       case "video-end":
         ps?.stopVideo();
         setLocalStream(null);
@@ -272,6 +294,20 @@ export default function Home() {
     const mine = !revealRef.current.mine;
     setReveal({ ...revealRef.current, mine });
     peerRef.current?.sendControl(mine ? "reveal-on" : "reveal-off");
+  }
+
+  function toggleMic() {
+    const mic = !myMedia.mic;
+    peerRef.current?.setTrackEnabled("audio", mic);
+    peerRef.current?.sendControl(mic ? "mic-on" : "mic-off");
+    setMyMedia({ ...myMedia, mic });
+  }
+
+  function toggleCam() {
+    const cam = !myMedia.cam;
+    peerRef.current?.setTrackEnabled("video", cam);
+    peerRef.current?.sendControl(cam ? "cam-on" : "cam-off");
+    setMyMedia({ ...myMedia, cam });
   }
 
   function endVideo() {
@@ -531,6 +567,10 @@ export default function Home() {
           remoteStream={remoteStream}
           reveal={reveal}
           onToggleReveal={toggleReveal}
+          myMedia={myMedia}
+          theirMedia={theirMedia}
+          onToggleMic={toggleMic}
+          onToggleCam={toggleCam}
           onEnd={endVideo}
         />
       )}
