@@ -407,6 +407,14 @@ export default function WorldMap({
     if (me && mapRef.current) centerOn(mapRef.current, me.lng, me.lat);
   }
 
+  const available = peers.filter((p) => !p.busy);
+
+  function connectRandom() {
+    if (!canConnect || available.length === 0) return;
+    const peer = available[Math.floor(Math.random() * available.length)];
+    onPeerClick(peer.id);
+  }
+
   return (
     <div className="absolute inset-0">
       <div ref={containerRef} className="h-full w-full bg-zinc-900" />
@@ -421,10 +429,9 @@ export default function WorldMap({
         </div>
       )}
 
-      {/* Light pills stand out against the dark map and panels. */}
       <div className="absolute right-4 top-4 flex flex-col items-stretch gap-2 text-xs font-medium">
         <div className="flex items-center justify-center gap-2 rounded-full bg-white/90 px-3 py-1.5 text-zinc-900 shadow-lg ring-1 ring-black/5 backdrop-blur">
-          <span className="size-1.5 rounded-full bg-emerald-500" />
+          <span className="size-1.5 rounded-full bg-green-500" />
           {peers.length} online
         </div>
 
@@ -432,9 +439,31 @@ export default function WorldMap({
           onClick={recenter}
           disabled={!me || !ready}
           title="Center on my location"
+          aria-label="Center on my location"
           className="flex items-center justify-center gap-1.5 rounded-full bg-white/90 px-3 py-1.5 text-zinc-900 shadow-lg ring-1 ring-black/5 backdrop-blur transition hover:bg-white active:scale-95 disabled:pointer-events-none disabled:opacity-40"
         >
-          📍 My location
+          <svg
+            viewBox="0 0 24 24"
+            className="size-4"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            strokeLinecap="round"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="7" />
+            <circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none" />
+            <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+          </svg>
+        </button>
+
+        <button
+          onClick={connectRandom}
+          disabled={!ready || !canConnect || available.length === 0}
+          title="Connect with someone random who's free"
+          className="flex items-center justify-center gap-1.5 rounded-full bg-white/90 px-3 py-1.5 text-zinc-900 shadow-lg ring-1 ring-black/5 backdrop-blur transition hover:bg-white active:scale-95 disabled:pointer-events-none disabled:opacity-40"
+        >
+          🎲 Random
         </button>
       </div>
     </div>
