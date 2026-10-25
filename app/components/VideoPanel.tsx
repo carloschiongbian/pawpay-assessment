@@ -12,17 +12,48 @@ function revealCopy(mine: boolean, theirs: boolean) {
   return { status: "Video is blurred", action: "Reveal" };
 }
 
+type Media = { mic: boolean; cam: boolean };
+
+// Mic and camera icons; `off` adds the slash.
+function MicIcon({ off }: { off: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+      <path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3" />
+      {off && <path d="M3 3l18 18" />}
+    </svg>
+  );
+}
+
+function CamIcon({ off }: { off: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="m16 13 5.2 3.5a.5.5 0 0 0 .8-.4V7.9a.5.5 0 0 0-.8-.4L16 10.5" />
+      <rect x="2" y="6" width="14" height="12" rx="2" />
+      {off && <path d="M3 3l18 18" />}
+    </svg>
+  );
+}
+
 export default function VideoPanel({
   localStream,
   remoteStream,
   reveal,
   onToggleReveal,
+  myMedia,
+  theirMedia,
+  onToggleMic,
+  onToggleCam,
   onEnd,
 }: {
   localStream: MediaStream | null;
   remoteStream: MediaStream | null;
   reveal: { mine: boolean; theirs: boolean };
   onToggleReveal: () => void;
+  myMedia: Media;
+  theirMedia: Media;
+  onToggleMic: () => void;
+  onToggleCam: () => void;
   onEnd: () => void;
 }) {
   const revealed = reveal.mine && reveal.theirs;
@@ -100,9 +131,22 @@ export default function VideoPanel({
           {copy.action}
         </button>
       </div>
-      {(!remoteStream || !hasFrames) && (
-        <div className="absolute inset-0 flex items-center justify-center text-zinc-500">
-          Waiting for stranger&rsquo;s video…
+      {!theirMedia.cam ? (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-zinc-900 text-zinc-400">
+          <CamIcon off />
+          <span className="text-sm">Their camera is off</span>
+        </div>
+      ) : (
+        (!remoteStream || !hasFrames) && (
+          <div className="absolute inset-0 flex items-center justify-center text-zinc-500">
+            Waiting for stranger&rsquo;s video…
+          </div>
+        )
+      )}
+      {!theirMedia.mic && (
+        <div className="absolute left-6 top-6 z-10 flex items-center gap-1.5 rounded-full bg-zinc-900/80 px-3 py-1.5 text-xs text-zinc-200 shadow-lg backdrop-blur">
+          <MicIcon off />
+          Muted
         </div>
       )}
       {/* Local (picture-in-picture) */}
@@ -114,7 +158,12 @@ export default function VideoPanel({
           muted
           className="h-full w-full object-cover"
         />
-        {!revealed && (
+        {!myMedia.cam && (
+          <div className="absolute inset-0 flex items-center justify-center bg-zinc-800 text-zinc-400">
+            <CamIcon off />
+          </div>
+        )}
+        {!revealed && myMedia.cam && (
           <span className="absolute inset-x-0 bottom-0 bg-black/60 py-1 text-center text-[10px] text-zinc-300">
             Blurred for them
           </span>
@@ -122,9 +171,33 @@ export default function VideoPanel({
       </div>
       {/* Overlay controls */}
       <div
-        className={`absolute inset-x-0 bottom-8 z-10 flex justify-center transition-opacity duration-300 ${controlsVisible ? "opacity-100" : "pointer-events-none opacity-0"
+        className={`absolute inset-x-0 bottom-8 z-10 flex items-center justify-center gap-3 transition-opacity duration-300 ${controlsVisible ? "opacity-100" : "pointer-events-none opacity-0"
           }`}
       >
+        <button
+          onClick={onToggleMic}
+          aria-pressed={!myMedia.mic}
+          aria-label={myMedia.mic ? "Mute microphone" : "Unmute microphone"}
+          title={myMedia.mic ? "Mute" : "Unmute"}
+          className={`flex size-12 items-center justify-center rounded-full shadow-lg transition active:scale-95 ${myMedia.mic
+            ? "bg-zinc-800/90 text-white hover:bg-zinc-700"
+            : "bg-white text-zinc-900 hover:bg-zinc-200"
+            }`}
+        >
+          <MicIcon off={!myMedia.mic} />
+        </button>
+        <button
+          onClick={onToggleCam}
+          aria-pressed={!myMedia.cam}
+          aria-label={myMedia.cam ? "Turn camera off" : "Turn camera on"}
+          title={myMedia.cam ? "Camera off" : "Camera on"}
+          className={`flex size-12 items-center justify-center rounded-full shadow-lg transition active:scale-95 ${myMedia.cam
+            ? "bg-zinc-800/90 text-white hover:bg-zinc-700"
+            : "bg-white text-zinc-900 hover:bg-zinc-200"
+            }`}
+        >
+          <CamIcon off={!myMedia.cam} />
+        </button>
         <button
           onClick={onEnd}
           className="rounded-full bg-red-500 px-8 py-3 font-semibold text-white shadow-lg hover:bg-red-400"
