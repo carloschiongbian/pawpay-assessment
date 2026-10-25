@@ -4,6 +4,18 @@
 // never shown to other users; they only see its hash (see lib/auth.ts).
 import type { PollResponse, SignalType } from "@/lib/types";
 
+// The public id other users know us by: the token's SHA-256, matching
+// publicIdFromToken in lib/auth.ts.
+export async function publicIdOf(token: string): Promise<string> {
+  const hash = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(token),
+  );
+  return Array.from(new Uint8Array(hash), (b) =>
+    b.toString(16).padStart(2, "0"),
+  ).join("");
+}
+
 function authHeaders(token: string): HeadersInit {
   return {
     Authorization: `Bearer ${token}`,
