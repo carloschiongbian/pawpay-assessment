@@ -9,7 +9,7 @@ import type { AvatarFullConfig } from "react-nice-avatar";
 import type { ArcEvent, PeerDot } from "@/lib/types";
 import { drawArc, greatCircle, type ArcHandle } from "./arcs";
 
-const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? "pk.eyJ1IjoicHVsc2UtbWFwIiwiYSI6ImNrMDBkZW1vMDAwMDAwMDAifQ.AAAAAAAAAAAAAAAAAAAAAA";
+export const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? "pk.eyJ1IjoicHVsc2UtbWFwIiwiYSI6ImNrMDBkZW1vMDAwMDAwMDAifQ.AAAAAAAAAAAAAAAAAAAAAA";
 const DRAWER_WIDTH = 448;
 const FRAME_PADDING = 80;
 const OVERLAY_HEIGHT = 200;
@@ -23,13 +23,16 @@ const MAX_ZOOM = 13;
 const WATER = "hsl(208, 65%, 30%)";
 const LAND = "hsl(145, 32%, 26%)";
 
-// Browser-only libraries, imported once and shared by every effect.
+export const MAP_STYLE = "mapbox://styles/mapbox/dark-v11";
+
+// Browser-only libraries, imported once and shared by every effect (and the
+// landing page's backdrop globe).
 let libsPromise: Promise<{
   mapboxgl: typeof import("mapbox-gl").default;
   avatar: typeof import("react-nice-avatar");
 }> | null = null;
 
-function loadLibs() {
+export function loadLibs() {
   libsPromise ??= Promise.all([
     import("mapbox-gl"),
     import("react-nice-avatar"),
@@ -60,7 +63,7 @@ function avatarConfig(
   return config;
 }
 
-function applyMapColors(map: MapboxMap) {
+export function applyMapColors(map: MapboxMap) {
   map.setPaintProperty("land", "background-color", LAND);
   map.setPaintProperty("landuse", "fill-color", "hsl(135, 35%, 30%)");
   map.setPaintProperty("water", "fill-color", WATER);
@@ -210,7 +213,7 @@ export default function WorldMap({
       mapboxgl.accessToken = TOKEN;
       const map = new mapboxgl.Map({
         container: containerRef.current,
-        style: "mapbox://styles/mapbox/dark-v11",
+        style: MAP_STYLE,
         // Open centered on the user if we know where they are, else world view.
         center: me ? [me.lng, me.lat] : [0, 20],
         zoom: me ? 4 : 1.4,
