@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 // GET /api/poll — Authorization: Bearer <token>. The single endpoint that
 // drives the live map. It (1) heartbeats the caller, (2) reaps stale presence
 // + orphan signals, (3) returns the filtered online peers, (4) drains this
-// user's mailbox, and (5) returns arcs for connections that just started.
+// user's mailbox, and (5) returns arcs for the connections that are live.
 export async function GET(request: NextRequest) {
   const id = callerId(request);
   if (!id) return unauthorized();
@@ -33,7 +33,6 @@ export async function GET(request: NextRequest) {
   // no atomicity needed, and avoids transactions over a PgBouncer pooler).
   await prisma.presence.deleteMany({ where: { lastSeen: { lt: staleCutoff } } });
   await prisma.signal.deleteMany({ where: { createdAt: { lt: signalCutoff } } });
-  await prisma.arc.deleteMany({ where: { createdAt: { lt: signalCutoff } } });
 
   // Only users on the map may see who else is: anyone else must join first,
   // which is rate limited.
@@ -68,11 +67,15 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  // 5) Connections started anywhere in the last few seconds, for the globe.
-  const arcs = await prisma.arc.findMany({
-    where: { createdAt: { gte: new Date(now - ARC_WINDOW_MS) } },
-    orderBy: { createdAt: "asc" },
+  // 5) Live connections, for the globe. An arc outlives its connection only
+  // if both people vanished without a clean leave, so drop any whose ends are
+  // no longer on the map.
+  const online = [id, ...peers.map((p) => p.id)];
+  await prisma.arc.deleteMany({
+    where: { OR: [{ aId: { notIn: online } }, { bId: { notIn: online } }] },
   });
+  const arcs = await prisma.arc.findMany({ orderBy: { createdAt: "asc" } });
+  const freshCutoff = now - ARC_WINDOW_MS;
 
   const response: PollResponse = {
     // False if our row was reaped (e.g. a throttled background tab missed
@@ -96,6 +99,7 @@ export async function GET(request: NextRequest) {
       id: a.id,
       from: [a.fromLng, a.fromLat],
       to: [a.toLng, a.toLat],
+      fresh: a.createdAt.getTime() >= freshCutoff,
     })),
   };
 
