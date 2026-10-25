@@ -408,6 +408,19 @@ export default function Home() {
     };
   }, [sessionToken, phase]);
 
+  // Back to the landing page. Leaving takes us off the map for everyone right
+  // away; mid-chat, the server also frees our partner and tells them we left.
+  // (Requesting/incoming states are covered by their own overlays, so only
+  // idle and connected can reach this.)
+  function exitToLanding() {
+    const c = connRef.current;
+    leave(sessionToken, c.kind === "idle" ? undefined : c.peerId);
+    teardown();
+    setPeers([]);
+    setArcs([]);
+    setPhase("gate");
+  }
+
   async function handleReady(lat: number, lng: number) {
     setMyLocation({ lat, lng });
     await join(sessionToken, lat, lng);
@@ -441,6 +454,14 @@ export default function Home() {
         drawerOpen={chatOpen}
         onFocusArcLanded={() => setArcLanded(true)}
       />
+
+      <button
+        onClick={exitToLanding}
+        title="Leave the map"
+        className="absolute left-4 top-4 z-10 flex items-center gap-1.5 rounded-full bg-white/90 px-3 py-1.5 text-xs font-medium text-zinc-900 shadow-lg ring-1 ring-black/5 backdrop-blur transition hover:bg-white active:scale-95"
+      >
+        ← Leave
+      </button>
 
       {connectingStage && (
         <ConnectingOverlay
