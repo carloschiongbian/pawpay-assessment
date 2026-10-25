@@ -32,6 +32,15 @@ export class PeerSession {
   private ignoreOffer = false;
   private localStream: MediaStream | null = null;
   private veil: Veil | null = null;
+  // One audio and one video sender for the whole session, added on the first
+  // video call and reused by every call after it by swapping tracks in and
+  // out. Adding and removing tracks instead renegotiates every time: the SDP
+  // grows by two m-lines per call, and the stop/start offers from both sides
+  // collide.
+  private readonly outgoing = new MediaStream();
+  // What we receive, kept across calls for the same reason.
+  private readonly remote = new MediaStream();
+  private audioSender: RTCRtpSender | null = null;
   private videoSender: RTCRtpSender | null = null;
   private revealed = false;
   private closed = false;
@@ -62,8 +71,10 @@ export class PeerSession {
       }
     };
 
-    this.pc.ontrack = ({ streams }) => {
-      this.cb.onRemoteStream(streams[0] ?? null);
+    // Only fires on the first video call; later calls reuse these tracks.
+    this.pc.ontrack = ({ track }) => {
+      if (!this.remote.getTracks().includes(track)) this.remote.addTrack(track);
+      this.cb.onRemoteStream(this.remote);
     };
 
     this.pc.onconnectionstatechange = () => {
@@ -174,20 +185,29 @@ export class PeerSession {
         video: true,
         audio: true,
       });
-      const outgoing = new MediaStream();
-      for (const track of this.localStream.getAudioTracks()) {
-        this.pc.addTrack(track, outgoing);
-      }
-      const camera = this.localStream.getVideoTracks()[0];
-      if (camera) {
-        this.veil = createVeil(camera);
-        this.videoSender = this.pc.addTrack(
-          this.revealed ? camera : this.veil.track,
-          outgoing,
-        );
+      const mic = this.localStream.getAudioTracks()[0] ?? null;
+      const camera = this.localStream.getVideoTracks()[0] ?? null;
+      this.veil = camera ? createVeil(camera) : null;
+      this.audioSender = this.send(this.audioSender, mic);
+      this.videoSender = this.send(
+        this.videoSender,
+        camera && (this.revealed ? camera : this.veil!.track),
+      );
+      // A repeat call gets no ontrack, so hand back what we already receive.
+      if (this.remote.getTracks().length > 0) {
+        this.cb.onRemoteStream(this.remote);
       }
     }
     return this.localStream;
+  }
+
+  // Start sending `track`: on a new sender the first time (one negotiation),
+  // after that by swapping it into the existing sender (none).
+  private send(sender: RTCRtpSender | null, track: MediaStreamTrack | null) {
+    if (!track) return sender;
+    if (!sender) return this.pc.addTrack(track, this.outgoing);
+    void sender.replaceTrack(track).catch(() => {});
+    return sender;
   }
 
   // Swap between the real camera and the veil without renegotiating.
@@ -204,17 +224,13 @@ export class PeerSession {
     this.revealed = false;
     this.veil?.stop();
     this.veil = null;
-    this.videoSender = null;
     if (this.localStream) {
       for (const track of this.localStream.getTracks()) track.stop();
-      for (const sender of this.pc.getSenders()) {
-        if (sender.track) {
-          try {
-            this.pc.removeTrack(sender);
-          } catch { }
-        }
-      }
       this.localStream = null;
+    }
+    // Keep the senders for the next call; just stop sending on them.
+    for (const sender of [this.audioSender, this.videoSender]) {
+      void sender?.replaceTrack(null).catch(() => {});
     }
   }
 
