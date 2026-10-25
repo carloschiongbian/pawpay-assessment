@@ -8,8 +8,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // POST /api/join — Authorization: Bearer <token>, body { lat, lng } (raw
-// coords). Applies a 1–3 km privacy offset and upserts the presence row. Raw
-// coordinates are never stored.
+// coords). Applies a 1–3 km privacy offset (new each session, stable within
+// one) and upserts the presence row. Raw coordinates are never stored.
 export async function POST(request: NextRequest) {
   const id = callerId(request);
   if (!id) return unauthorized();
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "invalid coordinates" }, { status: 400 });
   }
 
-  const offset = applyPrivacyOffset(lat as number, lng as number);
+  const offset = applyPrivacyOffset(lat as number, lng as number, id);
 
   await prisma.presence.upsert({
     where: { id },
