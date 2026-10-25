@@ -458,7 +458,7 @@ export default function Home() {
       <button
         onClick={exitToLanding}
         title="Leave the map"
-        className="absolute left-4 top-4 z-10 flex items-center gap-1.5 rounded-full bg-white/90 px-3 py-1.5 text-xs font-medium text-zinc-900 shadow-lg ring-1 ring-black/5 backdrop-blur transition hover:bg-white active:scale-95"
+        className="absolute left-4 top-4 z-10 flex cursor-pointer items-center gap-1.5 rounded-full bg-white/90 px-3 py-1.5 text-xs font-medium text-zinc-900 shadow-lg ring-1 ring-black/5 backdrop-blur transition hover:bg-white active:scale-95"
       >
         ← Leave
       </button>

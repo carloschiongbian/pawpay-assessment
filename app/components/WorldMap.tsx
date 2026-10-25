@@ -439,7 +439,7 @@ export default function WorldMap({
           disabled={!me || !ready}
           title="Center on my location"
           aria-label="Center on my location"
-          className="flex items-center justify-center gap-1.5 rounded-full bg-white/90 px-3 py-1.5 text-zinc-900 shadow-lg ring-1 ring-black/5 backdrop-blur transition hover:bg-white active:scale-95 disabled:pointer-events-none disabled:opacity-40"
+          className="flex cursor-pointer items-center justify-center gap-1.5 rounded-full bg-white/90 px-3 py-1.5 text-zinc-900 shadow-lg ring-1 ring-black/5 backdrop-blur transition hover:bg-white active:scale-95 disabled:pointer-events-none disabled:opacity-40"
         >
           <svg
             viewBox="0 0 24 24"
@@ -460,7 +460,7 @@ export default function WorldMap({
           onClick={connectRandom}
           disabled={!ready || !canConnect || available.length === 0}
           title="Connect with someone random who's free"
-          className="flex items-center justify-center gap-1.5 rounded-full bg-white/90 px-3 py-1.5 text-zinc-900 shadow-lg ring-1 ring-black/5 backdrop-blur transition hover:bg-white active:scale-95 disabled:pointer-events-none disabled:opacity-40"
+          className="flex cursor-pointer items-center justify-center gap-1.5 rounded-full bg-white/90 px-3 py-1.5 text-zinc-900 shadow-lg ring-1 ring-black/5 backdrop-blur transition hover:bg-white active:scale-95 disabled:pointer-events-none disabled:opacity-40"
         >
           🎲 Random
         </button>
