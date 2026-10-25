@@ -19,7 +19,9 @@ const VALID_TYPES: SignalType[] = [
 
 const DECLINE_REASONS: DeclineReason[] = ["busy", "offline"];
 
-const MAX_PAYLOAD = 16 * 1024; // SDP is a few KB, an ICE candidate ~300 bytes.
+// An SDP is a few KB (more once renegotiation includes gathered candidates);
+// an ICE candidate is ~300 bytes.
+const MAX_PAYLOAD = 32 * 1024;
 
 // Undelivered signals a recipient can have waiting, so nobody can flood a
 // mailbox (or the table) faster than its owner drains it.
