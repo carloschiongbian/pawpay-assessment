@@ -189,6 +189,11 @@ export default function Home() {
 
   function requestConnection(peerId: string) {
     if (connRef.current.kind !== "idle") return;
+    // Autodecline if the peer is busy.
+    if (peers.find((p) => p.id === peerId)?.busy) {
+      showNotice(DECLINE_NOTICES.busy);
+      return;
+    }
     // Reset before the accept: a poll can deliver our arc ahead of it.
     setArcLanded(false);
     setConn({ kind: "requesting", peerId });
@@ -370,7 +375,7 @@ export default function Home() {
         setPeers(data.peers);
         setArcs(data.arcs);
         for (const s of data.signals) processSignalRef.current(s);
-      } catch {}
+      } catch { }
       if (active) timer = setTimeout(tick, POLL_INTERVAL_MS);
     };
     tick();
