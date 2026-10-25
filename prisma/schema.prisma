@@ -34,15 +34,18 @@ model Signal {
 }
 
 model Arc {
-  // A connection that just started, drawn on everyone's globe for a few
-  // seconds. Holds no session ids — only the two (already privacy-offset) dot
-  // positions — and is reaped shortly after.
+  // A live connection, drawn on everyone's globe while it lasts. Only the two
+  // (already privacy-offset) dot positions are ever sent to clients; the public
+  // ids stay server-side so the arc can be removed when either person leaves.
   id        String   @id @default(uuid())
+  aId       String // requester
+  bId       String // accepter
   fromLat   Float
   fromLng   Float
   toLat     Float
   toLng     Float
   createdAt DateTime @default(now())
 
-  @@index([createdAt])
+  @@index([aId])
+  @@index([bId])
 }
