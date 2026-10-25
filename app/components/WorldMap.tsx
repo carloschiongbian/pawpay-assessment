@@ -13,6 +13,10 @@ const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? "pk.eyJ1IjoicHVsc2UtbWFwIi
 const DRAWER_WIDTH = 448;
 const FRAME_PADDING = 80;
 const OVERLAY_HEIGHT = 200;
+// City overview at most. Dots are already 1–3 km from the real location; at
+// zoom 11 an avatar spans ~1.7 km, so zooming in never shows finer detail than
+// the offset hides (no streets or buildings).
+const MAX_ZOOM = 13;
 
 // Recolor Mapbox's dark style: blue water, green land, and a blue atmosphere
 // around the globe. Kept dark so the white controls and avatars still pop.
@@ -146,6 +150,7 @@ export default function WorldMap({
   peers,
   arcs,
   me,
+  meId,
   onPeerClick,
   canConnect,
   focusId,
@@ -155,6 +160,8 @@ export default function WorldMap({
   peers: PeerDot[];
   arcs: ArcEvent[];
   me: { lat: number; lng: number } | null;
+  // Our public id, for our own avatar.
+  meId: string | null;
   onPeerClick: (id: string) => void;
   canConnect: boolean;
   // The person we're requesting / connected to, framed together with us.
@@ -167,6 +174,7 @@ export default function WorldMap({
   const mapRef = useRef<MapboxMap | null>(null);
   const markersRef = useRef<Map<string, PeerMarker>>(new Map());
   const meMarkerRef = useRef<Marker | null>(null);
+  const meRootRef = useRef<Root | null>(null);
   // Arcs on the map by id, plus every arc still on screen (including ones
   // fading out after their connection ended) so teardown can clear them.
   const arcsByIdRef = useRef<Map<string, ArcHandle>>(new Map());
@@ -206,6 +214,7 @@ export default function WorldMap({
         // Open centered on the user if we know where they are, else world view.
         center: me ? [me.lng, me.lat] : [0, 20],
         zoom: me ? 4 : 1.4,
+        maxZoom: MAX_ZOOM,
         attributionControl: true,
       });
       map.on("style.load", () => applyMapColors(map));
@@ -223,6 +232,9 @@ export default function WorldMap({
       markers.clear();
       meMarkerRef.current?.remove();
       meMarkerRef.current = null;
+      const meRoot = meRootRef.current;
+      meRootRef.current = null;
+      if (meRoot) queueMicrotask(() => meRoot.unmount());
       mapRef.current?.remove();
       mapRef.current = null;
       setReady(false);
@@ -231,33 +243,48 @@ export default function WorldMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Show / move the user's own "you are here" pin.
+  // Show / move the user's own avatar: the face others see for us, set apart
+  // by a green ring, a pulse and a "You" label.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready || !me) return;
     let cancelled = false;
 
     (async () => {
-      const { mapboxgl } = await loadLibs();
+      const { mapboxgl, avatar } = await loadLibs();
       if (cancelled) return;
       if (!meMarkerRef.current) {
         const el = document.createElement("div");
         el.className = "pulse-me";
         el.title = "You are here";
-        el.innerHTML = `<span class="pulse-me-label">Me</span>📍`;
-        // anchor "bottom" → the pin's tip sits on the exact coordinate.
-        meMarkerRef.current = new mapboxgl.Marker({ element: el, anchor: "bottom" })
+        const label = document.createElement("span");
+        label.className = "pulse-me-label";
+        label.textContent = "You";
+        const face = document.createElement("div");
+        face.className = "pulse-me-avatar";
+        el.append(label, face);
+        meRootRef.current = createRoot(face);
+        meMarkerRef.current = new mapboxgl.Marker({ element: el })
           .setLngLat([me.lng, me.lat])
           .addTo(map);
       } else {
         meMarkerRef.current.setLngLat([me.lng, me.lat]);
+      }
+      if (meId) {
+        meRootRef.current?.render(
+          createElement(avatar.default, {
+            ...avatarConfig(avatar.genConfig, meId),
+            shape: "circle",
+            style: { width: "100%", height: "100%" },
+          }),
+        );
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [me, ready]);
+  }, [me, meId, ready]);
 
   // Reconcile markers whenever the peer list changes (or the map becomes ready).
   useEffect(() => {
