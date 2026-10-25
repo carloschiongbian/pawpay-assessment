@@ -77,3 +77,36 @@ body {
   border-radius: 9999px;
   white-space: nowrap;
 }
+
+/* Shrinks to nothing over the request timeout (duration set inline). */
+.pulse-countdown {
+  transform-origin: left;
+  animation: pulse-countdown linear forwards;
+}
+
+@keyframes pulse-countdown {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+.pulse-toast {
+  animation: pulse-toast 200ms ease-out;
+}
+
+@keyframes pulse-toast {
+  from {
+    opacity: 0;
+    translate: 0 -8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse-countdown,
+  .pulse-toast {
+    animation: none;
+  }
+}
