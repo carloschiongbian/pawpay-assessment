@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import GlobeBackdrop from "./GlobeBackdrop";
 
 export default function EntryGate({
   onReady,
@@ -34,7 +35,8 @@ export default function EntryGate({
   }
 
   return (
-    <div className="flex min-h-full flex-1 flex-col items-center justify-center gap-8 bg-zinc-950 p-6 text-zinc-100">
+    <div className="relative isolate flex min-h-full flex-1 flex-col items-center justify-center gap-8 overflow-hidden bg-zinc-950 p-6 text-zinc-100">
+      <GlobeBackdrop />
       <div className="text-center">
         <h1 className="text-4xl font-bold tracking-tight">Pulse</h1>
         <p className="mt-2 max-w-sm text-zinc-400">
