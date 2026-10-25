@@ -466,7 +466,7 @@ export default function Home() {
 
       {conn.kind === "incoming" && (
         <ConnectionPrompt
-          title="A stranger wants to connect"
+          title="Someone wants to vibe with you"
           acceptLabel="Accept"
           declineLabel="Decline"
           onAccept={acceptIncoming}
