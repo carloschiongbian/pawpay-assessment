@@ -7,7 +7,7 @@ import ConnectionPrompt from "./components/ConnectionPrompt";
 import ConnectingOverlay from "./components/ConnectingOverlay";
 import ChatPanel, { type ChatMessage } from "./components/ChatPanel";
 import VideoPanel from "./components/VideoPanel";
-import { join, leave, poll, sendSignal } from "@/lib/api";
+import { join, leave, poll, publicIdOf, sendSignal } from "@/lib/api";
 import { PeerSession, type DescType, type PeerControl } from "@/lib/webrtc";
 import { POLL_INTERVAL_MS } from "@/lib/presence";
 import {
@@ -48,6 +48,8 @@ export default function Home() {
   const [phase, setPhase] = useState<"gate" | "live">("gate");
   // Secret: proves who we are to the API. Others only ever see its hash.
   const [sessionToken] = useState(() => crypto.randomUUID());
+  // Our public id, so our own avatar is the same face everyone else sees.
+  const [myId, setMyId] = useState<string | null>(null);
   const [peers, setPeers] = useState<PeerDot[]>([]);
   const [arcs, setArcs] = useState<ArcEvent[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -355,6 +357,12 @@ export default function Home() {
     return () => clearTimeout(timer);
   }, [conn.kind, arcLanded]);
 
+  useEffect(() => {
+    // crypto.subtle needs a secure context; elsewhere (plain-http LAN) fall back
+    // to the token, which only seeds the face and never leaves this tab.
+    publicIdOf(sessionToken).then(setMyId, () => setMyId(sessionToken));
+  }, [sessionToken]);
+
   const processSignalRef = useRef(processSignal);
   useEffect(() => {
     processSignalRef.current = processSignal;
@@ -426,6 +434,7 @@ export default function Home() {
         peers={peers}
         arcs={arcs}
         me={myLocation}
+        meId={myId}
         onPeerClick={requestConnection}
         canConnect={conn.kind === "idle"}
         focusId={conn.kind === "idle" ? null : conn.peerId}
