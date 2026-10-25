@@ -36,6 +36,7 @@ export async function POST(request: NextRequest) {
     where: { OR: [{ toId: id }, { fromId: id }] },
   });
   await prisma.presence.deleteMany({ where: { id } });
+  await prisma.arc.deleteMany({ where: { OR: [{ aId: id }, { bId: id }] } });
 
   // Free the partner and tell them we're gone. Runs after the signal cleanup
   // above so this "end" isn't swept up with our other outgoing signals.
