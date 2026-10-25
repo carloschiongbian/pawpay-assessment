@@ -74,7 +74,15 @@ export interface ArcHandle {
 export function drawArc(
   map: MapboxMap,
   arc: ArcEvent,
-  { reducedMotion, onDone }: { reducedMotion: boolean; onDone: () => void },
+  {
+    reducedMotion,
+    onDone,
+    onLanded,
+  }: {
+    reducedMotion: boolean;
+    onDone: () => void;
+    onLanded?: () => void;
+  },
 ): ArcHandle {
   const id = `arc-${arc.id}`;
   const ends = `${id}-ends`;
@@ -237,13 +245,21 @@ export function drawArc(
       for (const source of [id, ends, head]) {
         if (map.getSource(source)) map.removeSource(source);
       }
-    } catch {}
+    } catch { }
     onDone();
+  };
+
+  let landed = false;
+  const land = () => {
+    if (landed) return;
+    landed = true;
+    onLanded?.();
   };
 
   if (arc.fresh) {
     animate((t) => {
       const drawn = reducedMotion ? 1 : easeOut(clamp01(t / DRAW_MS));
+      if (drawn >= 1) land();
       const settle = clamp01((t - DRAW_MS - HOLD_MS) / SETTLE_MS);
       setLine(drawn, 1 - (1 - REST_OPACITY) * settle);
       setHead(drawn < 1 ? drawn : null);
@@ -254,6 +270,7 @@ export function drawArc(
       return settle < 1;
     });
   } else {
+    land();
     animate((t) => {
       setLine(1, REST_OPACITY * clamp01(t / FADE_IN_MS));
       return t < FADE_IN_MS;
