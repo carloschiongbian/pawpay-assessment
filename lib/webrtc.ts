@@ -8,7 +8,12 @@ export type PeerControl =
   | "video-end"
   // Mutual reveal: each side says whether it's ready to unblur.
   | "reveal-on"
-  | "reveal-off";
+  | "reveal-off"
+  // Mic/camera switched on or off, so the other side can show it.
+  | "mic-on"
+  | "mic-off"
+  | "cam-on"
+  | "cam-off";
 
 interface PeerCallbacks {
   onSignal: (type: DescType, payload: string) => void;
@@ -208,6 +213,14 @@ export class PeerSession {
     if (!sender) return this.pc.addTrack(track, this.outgoing);
     void sender.replaceTrack(track).catch(() => {});
     return sender;
+  }
+
+  // Mute or unmute without renegotiating: a disabled track sends silence or
+  // black frames, and the veil (drawn from the camera) goes black with it.
+  setTrackEnabled(kind: "audio" | "video", enabled: boolean) {
+    for (const track of this.localStream?.getTracks() ?? []) {
+      if (track.kind === kind) track.enabled = enabled;
+    }
   }
 
   // Swap between the real camera and the veil without renegotiating.
