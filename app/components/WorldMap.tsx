@@ -12,6 +12,7 @@ import { drawArc, greatCircle, type ArcHandle } from "./arcs";
 const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? "pk.eyJ1IjoicHVsc2UtbWFwIiwiYSI6ImNrMDBkZW1vMDAwMDAwMDAifQ.AAAAAAAAAAAAAAAAAAAAAA";
 const DRAWER_WIDTH = 448;
 const FRAME_PADDING = 80;
+const OVERLAY_HEIGHT = 200;
 
 // Recolor Mapbox's dark style: blue water, green land, and a blue atmosphere
 // around the globe. Kept dark so the white controls and avatars still pop.
@@ -86,7 +87,8 @@ function centerOn(map: MapboxMap, lng: number, lat: number) {
 }
 
 // Fly to show two people at once: centered on the midpoint of the arc between
-// them, zoomed so both fit, and clear of the chat drawer when it's open.
+// them, zoomed so both fit, and clear of the chat drawer when it's open (or
+// the connecting card when it isn't).
 function frameBoth(
   map: MapboxMap,
   a: [number, number],
@@ -94,7 +96,14 @@ function frameBoth(
   drawerOpen: boolean,
 ) {
   const { width } = map.getContainer().getBoundingClientRect();
-  const right = drawerOpen && width >= DRAWER_WIDTH * 2 ? DRAWER_WIDTH : 0;
+  const padding = {
+    top: FRAME_PADDING,
+    bottom: drawerOpen ? FRAME_PADDING : OVERLAY_HEIGHT,
+    left: FRAME_PADDING,
+    right:
+      FRAME_PADDING +
+      (drawerOpen && width >= DRAWER_WIDTH * 2 ? DRAWER_WIDTH : 0),
+  };
   // Unwrap so the box spans the short way around, not the whole world.
   let bLng = b[0];
   if (bLng - a[0] > 180) bLng -= 360;
@@ -104,20 +113,17 @@ function frameBoth(
       [Math.min(a[0], bLng), Math.min(a[1], b[1])],
       [Math.max(a[0], bLng), Math.max(a[1], b[1])],
     ],
-    {
-      padding: {
-        top: FRAME_PADDING,
-        bottom: FRAME_PADDING,
-        left: FRAME_PADDING,
-        right: FRAME_PADDING + right,
-      },
-    },
+    { padding },
   );
   map.flyTo({
     center: greatCircle(a, b, 2)[1],
     // Far apart: the whole globe. Close together: near, but not street level.
     zoom: Math.min(Math.max(camera?.zoom ?? 1.5, 1), 6),
-    offset: [-right / 2, 0],
+    // Center the pair in the area left uncovered.
+    offset: [
+      (padding.left - padding.right) / 2,
+      (padding.top - padding.bottom) / 2,
+    ],
     duration: 1600,
   });
 }
@@ -144,6 +150,7 @@ export default function WorldMap({
   canConnect,
   focusId,
   drawerOpen,
+  onFocusArcLanded,
 }: {
   peers: PeerDot[];
   arcs: ArcEvent[];
@@ -153,6 +160,8 @@ export default function WorldMap({
   // The person we're requesting / connected to, framed together with us.
   focusId: string | null;
   drawerOpen: boolean;
+  // Our own connection's arc has finished drawing in.
+  onFocusArcLanded: () => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapboxMap | null>(null);
@@ -168,9 +177,15 @@ export default function WorldMap({
   // connectability through refs (synced in an effect, never during render).
   const onPeerClickRef = useRef(onPeerClick);
   const canConnectRef = useRef(canConnect);
+  const onFocusArcLandedRef = useRef(onFocusArcLanded);
+  // Where the person we're connecting to is, to spot our arc among everyone's.
+  const focusPeer = peers.find((p) => p.id === focusId) ?? null;
+  const focusPeerRef = useRef(focusPeer);
   useEffect(() => {
     onPeerClickRef.current = onPeerClick;
     canConnectRef.current = canConnect;
+    onFocusArcLandedRef.current = onFocusArcLanded;
+    focusPeerRef.current = focusPeer;
   });
 
   // Initialise the map once.
@@ -320,6 +335,14 @@ export default function WorldMap({
       "(prefers-reduced-motion: reduce)",
     ).matches;
 
+    // Arcs run between dot positions, so ours is the one that ends at theirs.
+    const focus = focusPeerRef.current;
+    const isOurs = (arc: ArcEvent) =>
+      !!focus &&
+      [arc.from, arc.to].some(
+        ([lng, lat]) => lng === focus.lng && lat === focus.lat,
+      );
+
     const live = new Set<string>();
     for (const arc of arcs) {
       live.add(arc.id);
@@ -327,6 +350,9 @@ export default function WorldMap({
       const handle = drawArc(map, arc, {
         reducedMotion,
         onDone: () => active.delete(handle),
+        onLanded: isOurs(arc)
+          ? () => onFocusArcLandedRef.current()
+          : undefined,
       });
       byId.set(arc.id, handle);
       active.add(handle);
