@@ -81,13 +81,13 @@ export default function ChatPanel({
             disabled={!connected || videoBusy}
             className="rounded-full border border-zinc-700 px-3 py-1.5 text-sm hover:border-zinc-500 disabled:opacity-40"
           >
-            Video
+            Video Call
           </button>
           <button
             onClick={onEnd}
             className="rounded-full bg-red-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-400"
           >
-            End
+            Disconnect
           </button>
         </div>
       </header>
@@ -105,8 +105,8 @@ export default function ChatPanel({
           >
             <span
               className={`max-w-[80%] whitespace-pre-wrap wrap-anywhere rounded-2xl px-3 py-2 text-sm ${m.mine
-                  ? "bg-emerald-400 text-zinc-950"
-                  : "bg-zinc-800 text-zinc-100"
+                ? "bg-emerald-400 text-zinc-950"
+                : "bg-zinc-800 text-zinc-100"
                 }`}
             >
               {m.text}
