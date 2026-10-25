@@ -128,3 +128,10 @@ call.**
 - **Migrations:** `20261025120000_add_arcs`, then `20261025180000_persist_arcs`. The DB was
   originally created with `db push`, so apply them with `prisma db execute`, or
   baseline with `migrate resolve` first.
+
+## Blockers
+| Blocker | Why it blocked us | Approach |
+| --- | --- | --- |
+| **One chat locked everyone out** | After the first chat ended, every request was auto-declined. That blocked testing anything past one connection. | Followed the `busy` flag through `/api/signal` and fixed the lockout first, so everything after it could be tested. |
+| **The map couldn't be trusted** | Users who had left stayed on the map as ghost dots, so you couldn't tell who was really online, and tapping one said "User is busy". | Fixed the heartbeat before any UI work, so the map showed real presence. |
+| **Hard-to-reproduce timing bugs** | Connecting via 1.5s polling made bugs depend on timing: random "Connecting…" hangs and false declines. | Reasoned through the signal order message by message, then made handling order-safe instead of chasing individual timings. |
