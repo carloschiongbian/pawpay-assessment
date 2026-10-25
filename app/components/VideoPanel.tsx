@@ -30,6 +30,9 @@ export default function VideoPanel({
   const localRef = useRef<HTMLVideoElement>(null);
   const remoteRef = useRef<HTMLVideoElement>(null);
   const [controlsVisible, setControlsVisible] = useState(true);
+  // The remote stream is reused across calls, so it can exist before the
+  // stranger is sending again; wait for an actual frame.
+  const [hasFrames, setHasFrames] = useState(false);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -78,6 +81,7 @@ export default function VideoPanel({
         ref={remoteRef}
         autoPlay
         playsInline
+        onLoadedData={() => setHasFrames(true)}
         className={`h-full w-full bg-zinc-900 object-cover transition-[filter,scale] duration-700 ${revealed ? "" : "scale-110 blur-2xl"}`}
       />
 
@@ -96,7 +100,7 @@ export default function VideoPanel({
           {copy.action}
         </button>
       </div>
-      {!remoteStream && (
+      {(!remoteStream || !hasFrames) && (
         <div className="absolute inset-0 flex items-center justify-center text-zinc-500">
           Waiting for stranger&rsquo;s video…
         </div>
