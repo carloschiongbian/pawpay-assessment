@@ -27,12 +27,17 @@ export async function join(
   token: string,
   lat: number,
   lng: number,
-): Promise<void> {
-  await fetch("/api/join", {
+): Promise<{ lat: number; lng: number } | null> {
+  const res = await fetch("/api/join", {
     method: "POST",
     headers: authHeaders(token),
     body: JSON.stringify({ lat, lng }),
   });
+  if (!res.ok) return null;
+  const dot = (await res.json()) as { lat?: unknown; lng?: unknown };
+  return typeof dot.lat === "number" && typeof dot.lng === "number"
+    ? { lat: dot.lat, lng: dot.lng }
+    : null;
 }
 
 export async function poll(token: string): Promise<PollResponse> {
