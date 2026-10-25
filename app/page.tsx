@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import EntryGate from "./components/EntryGate";
 import WorldMap from "./components/WorldMap";
 import ConnectionPrompt from "./components/ConnectionPrompt";
+import ConnectingOverlay from "./components/ConnectingOverlay";
 import ChatPanel, { type ChatMessage } from "./components/ChatPanel";
 import VideoPanel from "./components/VideoPanel";
 import { join, leave, poll, sendSignal } from "@/lib/api";
@@ -30,6 +31,13 @@ type Reveal = { mine: boolean; theirs: boolean };
 const NOT_REVEALED: Reveal = { mine: false, theirs: false };
 
 const REQUEST_TIMEOUT_MS = 30_000;
+// Accepted but the peer-to-peer link never came up (e.g. their side was torn
+// down by a stale "end"); give up rather than hold the overlay forever.
+const CONNECT_TIMEOUT_MS = 20_000;
+
+// The chat opens once our arc has landed on the map. If the arc is missed
+// (e.g. a slow poll), don't keep a connected user waiting longer than this.
+const ARC_FALLBACK_MS = 4_000;
 
 const DECLINE_NOTICES: Record<string, string> = {
   busy: "User is busy.",
@@ -67,6 +75,7 @@ export default function Home() {
   };
 
   const peerRef = useRef<PeerSession | null>(null);
+  const [arcLanded, setArcLanded] = useState(false);
 
   const [reveal, _setReveal] = useState<Reveal>(NOT_REVEALED);
   const revealRef = useRef<Reveal>(reveal);
@@ -78,6 +87,7 @@ export default function Home() {
   };
   const msgId = useRef(0);
   const requestTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const connectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function showNotice(text: string) {
     setNotice(text);
@@ -90,6 +100,7 @@ export default function Home() {
 
   function teardown(message?: string) {
     if (requestTimer.current) clearTimeout(requestTimer.current);
+    if (connectTimer.current) clearTimeout(connectTimer.current);
     peerRef.current?.close();
     peerRef.current = null;
     setLocalStream(null);
@@ -127,6 +138,12 @@ export default function Home() {
       },
     });
     peerRef.current = ps;
+    connectTimer.current = setTimeout(() => {
+      if (peerRef.current === ps && connRef.current.kind === "connecting") {
+        void sendSignal(sessionToken, peerId, "end");
+        teardown("Couldn't connect.");
+      }
+    }, CONNECT_TIMEOUT_MS);
   }
 
   function handleControl(ctrl: PeerControl) {
@@ -172,6 +189,8 @@ export default function Home() {
 
   function requestConnection(peerId: string) {
     if (connRef.current.kind !== "idle") return;
+    // Reset before the accept: a poll can deliver our arc ahead of it.
+    setArcLanded(false);
     setConn({ kind: "requesting", peerId });
     void sendSignal(sessionToken, peerId, "request");
     requestTimer.current = setTimeout(() => {
@@ -195,6 +214,7 @@ export default function Home() {
   function acceptIncoming() {
     if (connRef.current.kind !== "incoming") return;
     const peerId = connRef.current.peerId;
+    setArcLanded(false);
     startPeer(peerId, false);
     void sendSignal(sessionToken, peerId, "accept");
     setConn({ kind: "connecting", peerId });
@@ -323,6 +343,13 @@ export default function Home() {
     }
   }
 
+  // Open the chat even if our arc never shows up.
+  useEffect(() => {
+    if (conn.kind !== "connected" || arcLanded) return;
+    const timer = setTimeout(() => setArcLanded(true), ARC_FALLBACK_MS);
+    return () => clearTimeout(timer);
+  }, [conn.kind, arcLanded]);
+
   const processSignalRef = useRef(processSignal);
   useEffect(() => {
     processSignalRef.current = processSignal;
@@ -378,7 +405,15 @@ export default function Home() {
     return <EntryGate onReady={handleReady} />;
   }
 
-  const inChat = conn.kind === "connecting" || conn.kind === "connected";
+  // Chat opens only once the link is up and the arc between us has landed;
+  // until then the connecting overlay holds the map still.
+  const chatOpen = conn.kind === "connected" && arcLanded;
+  const connectingStage =
+    conn.kind === "requesting" || conn.kind === "connecting"
+      ? conn.kind
+      : conn.kind === "connected" && !arcLanded
+        ? "connected"
+        : null;
 
   return (
     <main className="fixed inset-0 overflow-clip">
@@ -389,24 +424,29 @@ export default function Home() {
         onPeerClick={requestConnection}
         canConnect={conn.kind === "idle"}
         focusId={conn.kind === "idle" ? null : conn.peerId}
-        drawerOpen={inChat}
+        drawerOpen={chatOpen}
+        onFocusArcLanded={() => setArcLanded(true)}
       />
 
-      {notice && (
-        <div className="absolute left-1/2 top-20 z-30 -translate-x-1/2 rounded-full bg-zinc-800/90 px-4 py-2 text-sm text-zinc-100 shadow-lg backdrop-blur">
-          {notice}
-        </div>
+      {connectingStage && (
+        <ConnectingOverlay
+          stage={connectingStage}
+          timeoutMs={REQUEST_TIMEOUT_MS}
+          onCancel={
+            connectingStage === "requesting" ? cancelRequest : endConnection
+          }
+        />
       )}
 
-      {conn.kind === "requesting" && (
-        <div className="absolute left-1/2 top-20 z-30 flex -translate-x-1/2 items-center gap-3 rounded-full bg-zinc-800/90 px-4 py-2 text-sm text-zinc-100 shadow-lg backdrop-blur">
-          <span>Requesting connection…</span>
-          <button
-            onClick={cancelRequest}
-            className="rounded-full bg-zinc-700 px-3 py-1 text-xs hover:bg-zinc-600"
-          >
-            Cancel
-          </button>
+      {notice && (
+        <div
+          key={notice}
+          role="status"
+          aria-live="polite"
+          className="pulse-toast absolute left-1/2 top-4 z-30 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium text-zinc-900 shadow-lg ring-1 ring-black/5"
+        >
+          <span className="size-2 shrink-0 rounded-full bg-amber-500" />
+          {notice}
         </div>
       )}
 
@@ -421,7 +461,7 @@ export default function Home() {
       )}
 
       <ChatPanel
-        open={inChat}
+        open={chatOpen}
         messages={messages}
         connected={conn.kind === "connected"}
         videoBusy={video !== "none"}
