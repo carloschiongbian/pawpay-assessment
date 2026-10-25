@@ -28,6 +28,7 @@ export interface ArcEvent {
   id: string;
   from: [number, number];
   to: [number, number];
+  fresh: boolean; // just started: draw it in, rather than appear at rest
 }
 
 export interface SignalMsg {

@@ -7,9 +7,16 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import type { Map as MapboxMap, Marker } from "mapbox-gl";
 import type { AvatarFullConfig } from "react-nice-avatar";
 import type { ArcEvent, PeerDot } from "@/lib/types";
-import { drawArc } from "./arcs";
+import { drawArc, greatCircle, type ArcHandle } from "./arcs";
 
 const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? "pk.eyJ1IjoicHVsc2UtbWFwIiwiYSI6ImNrMDBkZW1vMDAwMDAwMDAifQ.AAAAAAAAAAAAAAAAAAAAAA";
+const DRAWER_WIDTH = 448;
+const FRAME_PADDING = 80;
+
+// Recolor Mapbox's dark style: blue water, green land, and a blue atmosphere
+// around the globe. Kept dark so the white controls and avatars still pop.
+const WATER = "hsl(208, 65%, 30%)";
+const LAND = "hsl(145, 32%, 26%)";
 
 // Browser-only libraries, imported once and shared by every effect.
 let libsPromise: Promise<{
@@ -48,11 +55,6 @@ function avatarConfig(
   return config;
 }
 
-// Recolor Mapbox's dark style: blue water, green land, and a blue atmosphere
-// around the globe. Kept dark so the white controls and avatars still pop.
-const WATER = "hsl(208, 65%, 30%)";
-const LAND = "hsl(145, 32%, 26%)";
-
 function applyMapColors(map: MapboxMap) {
   map.setPaintProperty("land", "background-color", LAND);
   map.setPaintProperty("landuse", "fill-color", "hsl(135, 35%, 30%)");
@@ -83,6 +85,43 @@ function centerOn(map: MapboxMap, lng: number, lat: number) {
   map.flyTo({ center: [lng, lat], zoom: Math.max(map.getZoom(), 4) });
 }
 
+// Fly to show two people at once: centered on the midpoint of the arc between
+// them, zoomed so both fit, and clear of the chat drawer when it's open.
+function frameBoth(
+  map: MapboxMap,
+  a: [number, number],
+  b: [number, number],
+  drawerOpen: boolean,
+) {
+  const { width } = map.getContainer().getBoundingClientRect();
+  const right = drawerOpen && width >= DRAWER_WIDTH * 2 ? DRAWER_WIDTH : 0;
+  // Unwrap so the box spans the short way around, not the whole world.
+  let bLng = b[0];
+  if (bLng - a[0] > 180) bLng -= 360;
+  else if (bLng - a[0] < -180) bLng += 360;
+  const camera = map.cameraForBounds(
+    [
+      [Math.min(a[0], bLng), Math.min(a[1], b[1])],
+      [Math.max(a[0], bLng), Math.max(a[1], b[1])],
+    ],
+    {
+      padding: {
+        top: FRAME_PADDING,
+        bottom: FRAME_PADDING,
+        left: FRAME_PADDING,
+        right: FRAME_PADDING + right,
+      },
+    },
+  );
+  map.flyTo({
+    center: greatCircle(a, b, 2)[1],
+    // Far apart: the whole globe. Close together: near, but not street level.
+    zoom: Math.min(Math.max(camera?.zoom ?? 1.5, 1), 6),
+    offset: [-right / 2, 0],
+    duration: 1600,
+  });
+}
+
 interface PeerMarker {
   marker: Marker;
   button: HTMLButtonElement;
@@ -103,20 +142,26 @@ export default function WorldMap({
   me,
   onPeerClick,
   canConnect,
+  focusId,
+  drawerOpen,
 }: {
   peers: PeerDot[];
   arcs: ArcEvent[];
   me: { lat: number; lng: number } | null;
   onPeerClick: (id: string) => void;
   canConnect: boolean;
+  // The person we're requesting / connected to, framed together with us.
+  focusId: string | null;
+  drawerOpen: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapboxMap | null>(null);
   const markersRef = useRef<Map<string, PeerMarker>>(new Map());
   const meMarkerRef = useRef<Marker | null>(null);
-  const seenArcsRef = useRef<Set<string>>(new Set());
-  // Stop functions for arcs still animating, so teardown can cancel them.
-  const activeArcsRef = useRef<Set<() => void>>(new Set());
+  // Arcs on the map by id, plus every arc still on screen (including ones
+  // fading out after their connection ended) so teardown can clear them.
+  const arcsByIdRef = useRef<Map<string, ArcHandle>>(new Map());
+  const activeArcsRef = useRef<Set<ArcHandle>>(new Set());
   const [ready, setReady] = useState(false);
 
   // Marker click handlers are bound once, so read the live click handler +
@@ -133,6 +178,7 @@ export default function WorldMap({
     if (!TOKEN || !containerRef.current) return;
     let cancelled = false;
     const markers = markersRef.current;
+    const arcsById = arcsByIdRef.current;
     const activeArcs = activeArcsRef.current;
 
     (async () => {
@@ -156,7 +202,8 @@ export default function WorldMap({
 
     return () => {
       cancelled = true;
-      activeArcs.forEach((stop) => stop());
+      activeArcs.forEach((arc) => arc.stop());
+      arcsById.clear();
       markers.forEach(removePeerMarker);
       markers.clear();
       meMarkerRef.current?.remove();
@@ -221,8 +268,9 @@ export default function WorldMap({
           el.append(button);
           button.addEventListener("click", (e) => {
             e.stopPropagation();
-            centerOn(map, peer.lng, peer.lat);
+            // Requesting frames both of us instead (see below).
             if (canConnectRef.current) onPeerClickRef.current(peer.id);
+            else centerOn(map, peer.lng, peer.lat);
           });
           // Rendered once; the avatar never changes for a given user.
           const root = createRoot(button);
@@ -261,30 +309,46 @@ export default function WorldMap({
     };
   }, [peers, ready]);
 
-  // Draw each connection arc once, the first poll it shows up in.
+  // Reconcile arcs: draw each live connection once, and fade out the ones
+  // whose connection has ended.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    const seen = seenArcsRef.current;
+    const byId = arcsByIdRef.current;
     const active = activeArcsRef.current;
     const reducedMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
 
+    const live = new Set<string>();
     for (const arc of arcs) {
-      if (seen.has(arc.id)) continue;
-      seen.add(arc.id);
-      const stop = drawArc(map, arc, {
+      live.add(arc.id);
+      if (byId.has(arc.id)) continue;
+      const handle = drawArc(map, arc, {
         reducedMotion,
-        onDone: () => active.delete(stop),
+        onDone: () => active.delete(handle),
       });
-      active.add(stop);
+      byId.set(arc.id, handle);
+      active.add(handle);
     }
-
-    // The server stops sending an arc once it's old, and never sends it again.
-    const live = new Set(arcs.map((a) => a.id));
-    for (const id of seen) if (!live.has(id)) seen.delete(id);
+    for (const [id, handle] of byId) {
+      if (!live.has(id)) {
+        handle.remove();
+        byId.delete(id);
+      }
+    }
   }, [arcs, ready]);
+
+  // Frame us and the other person together when a connection starts, and
+  // again when the chat drawer opens, so the arc between us is in view.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || !focusId) return;
+    const peer = markersRef.current.get(focusId)?.marker.getLngLat();
+    const self = meMarkerRef.current?.getLngLat();
+    if (!peer || !self) return;
+    frameBoth(map, [self.lng, self.lat], [peer.lng, peer.lat], drawerOpen);
+  }, [focusId, drawerOpen, ready]);
 
   function recenter() {
     if (me && mapRef.current) centerOn(mapRef.current, me.lng, me.lat);

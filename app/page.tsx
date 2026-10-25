@@ -388,6 +388,8 @@ export default function Home() {
         me={myLocation}
         onPeerClick={requestConnection}
         canConnect={conn.kind === "idle"}
+        focusId={conn.kind === "idle" ? null : conn.peerId}
+        drawerOpen={inChat}
       />
 
       {notice && (
