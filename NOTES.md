@@ -77,9 +77,6 @@ Found by running two browsers side by side and testing each flow, then reading
 
 ## Phase 4 — Make it better
 
-Two small features that tell one story: **life on the globe, consent in the
-call.**
-
 ### Mutual-reveal video (safe)
 
 - **What:** every video call starts blurred. Each person taps **Reveal**, and
@@ -128,6 +125,23 @@ call.**
 - **Migrations:** `20261025120000_add_arcs`, then `20261025180000_persist_arcs`. The DB was
   originally created with `db push`, so apply them with `prisma db execute`, or
   baseline with `migrate resolve` first.
+
+### Random connect (easy way in)
+
+- **What:** a **🎲 Random** pill in the top-right stack sends a request to a
+  random person who is avaialble.
+- **Why:** picking a stranger off a map is a hurdle, especially when the
+  nearest dots are far away. One tap gets you into a conversation, which is
+  the core of random chat.
+- **How:** picks from the peers in the latest poll whose `busy` flag is off,
+  then runs the normal request flow: the waiting overlay, the pair framing, the
+  arc, then the chat. It reuses the same rate limit (6 requests/min), so it
+  can't be used to spam people.
+- **Disabled** while the map loads, while you're already connecting or
+  chatting, and when nobody is free.
+- **Edge case:** availability can be up to one poll (~1.5s) old. If the person
+  joins a call in that window, the server auto-declines and you see "User is
+  busy."
 
 ## Blockers
 | Blocker | Why it blocked us | Approach |
