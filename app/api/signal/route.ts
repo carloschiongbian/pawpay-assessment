@@ -107,9 +107,12 @@ export async function POST(request: NextRequest) {
       data: { busy: true },
     });
     // Light up the new connection on everyone's globe, from requester to
-    // accepter.
+    // accepter, for as long as it lasts.
+    await deleteArcs([fromId, toId]);
     await prisma.arc.create({
       data: {
+        aId: toId,
+        bId: fromId,
         fromLat: target.lat,
         fromLng: target.lng,
         toLat: sender.lat,
@@ -126,6 +129,7 @@ export async function POST(request: NextRequest) {
       where: { id: { in: [fromId, toId] } },
       data: { busy: false },
     });
+    await deleteArcs([fromId, toId]);
   }
 
   await prisma.signal.create({
@@ -154,6 +158,13 @@ function isValidPayload(type: SignalType, payload: unknown): boolean {
     default:
       return payload == null;
   }
+}
+
+// Helper: remove the arc of any connection these users are in.
+async function deleteArcs(ids: string[]) {
+  await prisma.arc.deleteMany({
+    where: { OR: [{ aId: { in: ids } }, { bId: { in: ids } }] },
+  });
 }
 
 // Helper: deliver an auto-decline from `target` back to `initiator`, with the
