@@ -310,9 +310,7 @@ export default function WorldMap({
           el.append(button);
           button.addEventListener("click", (e) => {
             e.stopPropagation();
-            // Requesting frames both of us instead (see below).
             if (canConnectRef.current) onPeerClickRef.current(peer.id);
-            else centerOn(map, peer.lng, peer.lat);
           });
           // Rendered once; the avatar never changes for a given user.
           const root = createRoot(button);
@@ -416,7 +414,8 @@ export default function WorldMap({
   }
 
   return (
-    <div className="absolute inset-0">
+    // Mid-connection, other avatars can't be tapped.
+    <div className={`absolute inset-0 ${canConnect ? "" : "pulse-locked"}`}>
       <div ref={containerRef} className="h-full w-full bg-zinc-900" />
 
       {!TOKEN && (

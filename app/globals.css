@@ -27,6 +27,7 @@ body {
 
 /* Tailwind v4 resets buttons to the default cursor; bring back the pointer. */
 @layer base {
+
   button:not(:disabled),
   [role="button"]:not([aria-disabled="true"]) {
     cursor: pointer;
@@ -58,6 +59,11 @@ body {
    marker is behind the globe) doesn't clobber it. */
 .pulse-avatar.is-busy {
   opacity: 0.35;
+}
+
+.pulse-locked .pulse-avatar {
+  pointer-events: none;
+  cursor: default;
 }
 
 /* The user's own avatar: same size as everyone else's, but with a green ring,
@@ -100,6 +106,7 @@ body {
     transform: scale(0.95);
     opacity: 0.9;
   }
+
   to {
     transform: scale(1.7);
     opacity: 0;
@@ -140,6 +147,7 @@ body {
   from {
     transform: scaleX(1);
   }
+
   to {
     transform: scaleX(0);
   }
@@ -157,6 +165,7 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   .pulse-countdown,
   .pulse-toast {
     animation: none;
